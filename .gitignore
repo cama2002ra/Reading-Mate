@@ -1,0 +1,92 @@
+# ==============================================================================
+# Reading Mate — .gitignore
+# Expo SDK 57 / React Native / Cloudflare Worker / Firebase
+# ==============================================================================
+
+# --- Dependencies ---
+node_modules/
+/.pnp
+.pnp.js
+
+# --- Environment & Secrets ---
+# Never commit credentials or API keys (Gemini, Backblaze B2, Firebase)
+.env
+.env.*
+!.env.example
+.dev.vars*
+
+# --- Cloudflare Worker & Wrangler ---
+.wrangler/
+
+# --- Expo & Metro ---
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+
+# --- Native Builds & Prebuilds ---
+# Generated folders (managed workflow)
+/ios
+/android
+.kotlin/
+*.orig.*
+
+# Certificates, keys, & provisioning
+*.jks
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+*.keystore
+
+# EAS Build
+.eas/
+
+# --- TypeScript ---
+*.tsbuildinfo
+
+# --- Logs & Debugging ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+
+# --- Tests & Coverage ---
+coverage/
+*.lcov
+.nyc_output/
+
+# --- OS Specific ---
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+
+# Linux
+*~
+
+# --- IDEs & Editors ---
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# --- Archives & Temporary Artifacts ---
+*.zip
+*.tar.gz
+*.tgz
+*.rar
