@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "reading-mate-uploads",
+  "main": "src/index.js",
+  // Keep this at (or after) today's date when you deploy.
+  "compatibility_date": "2026-08-05",
+  "vars": {
+    // Not secret — this is the same project ID already visible in
+    // src/services/firebase.js's firebaseConfig.
+    "FIREBASE_PROJECT_ID": "test-94684",
+    // From Backblaze B2 console → your bucket's details page.
+    "B2_BUCKET_NAME": "reading-mate",
+    "B2_BUCKET_ID": "142c069d3536d63c97fd0110"
+  }
+  // B2_KEY_ID, B2_APPLICATION_KEY, DOWNLOAD_TOKEN_SECRET are set as
+  // secrets via `wrangler secret put` (see README's "File uploads" setup
+  // section), not here — never commit those to source control.
+}
