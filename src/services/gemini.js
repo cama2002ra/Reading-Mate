@@ -98,7 +98,10 @@ export async function simplifyText(text, level = 'a 10-year-old reader') {
 export async function explainWord(word, context = '') {
   const prompt =
     `Explain the word "${word}" the way you would to a curious kid. ` +
-    (context ? `It appears in this context: """${context}""". ` : '') +
+    (context
+      ? `It appears in this context: """${windowAround(context, word)}""". Re-read that context and ` +
+        `explain the meaning the word has THERE (if it has several meanings, pick the right one). `
+      : '') +
     `Give: (1) a one-sentence, simple definition, (2) one short example sentence of your own. ` +
     `Return only those two things, no preamble.`;
 
@@ -631,15 +634,36 @@ export async function continueConversationQuiz(session, priorMessages, numQuesti
 // the model on every single selection.
 const MAX_PAGE_CONTEXT_CHARS = 1500;
 
-function truncateForContext(text) {
-  if (!text || text.length <= MAX_PAGE_CONTEXT_CHARS) return text || '';
-  return `${text.slice(0, MAX_PAGE_CONTEXT_CHARS)}…`;
+// Returns the stretch of `context` centred on `selection` (about `radius`
+// characters either side), so the AI re-reads what actually surrounds the
+// confusing words rather than whatever happens to open the page. Falls
+// back to the start of the text when the selection can't be located
+// (e.g. PDF.js joined lines differently from the selected string).
+export function windowAround(context, selection, radius = MAX_PAGE_CONTEXT_CHARS / 2) {
+  if (!context) return '';
+  if (context.length <= radius * 2 + (selection || '').length) return context;
+  const norm = (t) => t.replace(/\s+/g, ' ');
+  const flat = norm(context);
+  const needle = norm(selection || '').trim();
+  const at = needle ? flat.indexOf(needle) : -1;
+  if (at === -1) return `${flat.slice(0, radius * 2)}…`;
+  const start = Math.max(0, at - radius);
+  const end = Math.min(flat.length, at + needle.length + radius);
+  return `${start > 0 ? '…' : ''}${flat.slice(start, end)}${end < flat.length ? '…' : ''}`;
+}
+
+const REREAD_NOTE =
+  `First re-read the surrounding text to understand how the selected part is used there, ` +
+  `then explain what it means in this context — not just a dictionary meaning.`;
+
+function truncateForContext(text, selection) {
+  return windowAround(text, selection);
 }
 
 function buildSelectionFollowUpText({ selectionText, pageIndex, pageContext, action, customInstruction }) {
   const pageNote = pageIndex ? ` (page ${pageIndex})` : '';
   const contextNote = pageContext
-    ? ` For context, here is surrounding text from the same page: """${truncateForContext(pageContext)}"""`
+    ? ` For context, here is the surrounding text from the same page: """${truncateForContext(pageContext, selectionText)}""" ${REREAD_NOTE}`
     : '';
 
   switch (action) {
@@ -696,7 +720,9 @@ export async function runSelectionAction(session, priorMessages, options) {
 export async function explainSentence(selection, context = '') {
   const prompt =
     `Explain this passage the way you would to a curious kid: """${selection}""" ` +
-    (context ? `It was selected from this larger passage: """${context}""". ` : '') +
+    (context
+      ? `It was selected from this larger passage: """${windowAround(context, selection)}""". ${REREAD_NOTE} `
+      : '') +
     `Give a short, clear explanation in 1-2 sentences. Return only that, no preamble.`;
 
   const interaction = await callGemini({ input: prompt });
