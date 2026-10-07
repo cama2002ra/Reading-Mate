@@ -22,6 +22,8 @@ import ChatBubble from '../components/ChatBubble';
 import ReadingPane from '../components/ReadingPane';
 import PdfReader from '../components/PdfReader';
 import WordExplainModal from '../components/WordExplainModal';
+import LoopListenModal from '../components/LoopListenModal';
+import SelectionBar from '../components/SelectionBar';
 import ImageViewerModal from '../components/ImageViewerModal';
 import AttachmentInstructionModal from '../components/AttachmentInstructionModal';
 import { useTheme } from '../contexts/ThemeContext';
@@ -211,6 +213,8 @@ export default function SessionScreen({ route, navigation }) {
   // otherwise a reply could keep narrating over whatever's on screen next.
   useEffect(() => {
     return () => {
+      loopRef.current.active = false;
+      clearTimeout(loopRef.current.timer);
       Speech.stop();
     };
   }, [sessionId]);
@@ -378,7 +382,7 @@ export default function SessionScreen({ route, navigation }) {
   // picks which popup mode (and which Gemini call) applies. Replaces the
   // old separate handleWordPress/handleSentencePress pair now that both
   // come from the same "Explain" button instead of two different gestures.
-  const handleExplainSelection = useCallback(async (selectedText, isSingleWord, contextText) => {
+  const handleExplainSelection = useCallback(async (selectedText, isSingleWord, contextText, onResult) => {
     const trimmed = (selectedText || '').trim();
     if (!trimmed) return;
 
@@ -389,6 +393,7 @@ export default function SessionScreen({ route, navigation }) {
       try {
         const definition = await explainWord(word, contextText);
         setPopup({ mode: 'word', term: word, loading: false, definition, error: null });
+        onResult?.(definition);
       } catch (err) {
         setPopup({
           mode: 'word',
@@ -405,6 +410,7 @@ export default function SessionScreen({ route, navigation }) {
     try {
       const definition = await explainSentence(trimmed, contextText);
       setPopup({ mode: 'sentence', term: trimmed, loading: false, definition, error: null });
+      onResult?.(definition);
     } catch (err) {
       setPopup({
         mode: 'sentence',
@@ -429,35 +435,208 @@ export default function SessionScreen({ route, navigation }) {
   // live word-highlight in the reading pane (see ReadingPane.js /
   // TappableText.js) — the single change most likely to make this feel
   // like a reading experience rather than "play this message aloud."
+  // Remembers where the read-aloud stopped so "Re-read for me" can pause
+  // the narration, deal with the confusing part, and then pick the reading
+  // back up. { kind: 'chat' | 'reader', index, text, charIndex } | null.
+  const resumeRef = useRef(null);
+  const [canResume, setCanResume] = useState(false);
+
+  // The one place read-aloud starts, for both modes. `offset` lets a
+  // resumed reading start part-way through `text`; boundary indexes are
+  // shifted back by it so the live highlight still lines up with `text`.
+  const startSpeech = useCallback((kind, index, text, offset = 0) => {
+    Speech.stop();
+    resumeRef.current = { kind, index, text, charIndex: offset };
+    if (kind === 'chat') {
+      setSpeakingIndex(index);
+      setSpeakingCharIndex(offset);
+    } else {
+      setReaderSpeaking(true);
+    }
+    const clear = () => {
+      if (kind === 'chat') {
+        setSpeakingIndex(null);
+        setSpeakingCharIndex(null);
+      } else {
+        setReaderSpeaking(false);
+        pdfReaderRef.current?.highlightAtChar(null);
+      }
+    };
+    Speech.speak(text.slice(offset), {
+      onBoundary: (event) => {
+        const abs = offset + event.charIndex;
+        if (resumeRef.current) resumeRef.current.charIndex = abs;
+        if (kind === 'chat') setSpeakingCharIndex(abs);
+        else pdfReaderRef.current?.highlightAtChar(abs);
+      },
+      onDone: () => {
+        resumeRef.current = null;
+        clear();
+      },
+      onStopped: clear, // keeps resumeRef — a stop may be "pause to re-read"
+      onError: clear,
+    });
+  }, []);
+
+  // Only one reply can be read aloud at a time. Tapping the button on the
+  // message that's already speaking stops it; tapping a different one
+  // interrupts and starts the new one.
   const toggleSpeak = useCallback(
     (index, text) => {
       if (speakingIndex === index) {
         Speech.stop();
+        resumeRef.current = null;
         setSpeakingIndex(null);
         setSpeakingCharIndex(null);
         return;
       }
-      Speech.stop();
-      setSpeakingIndex(index);
-      setSpeakingCharIndex(0);
-      Speech.speak(text, {
-        onBoundary: (event) => setSpeakingCharIndex(event.charIndex),
+      startSpeech('chat', index, text, 0);
+    },
+    [speakingIndex, startSpeech]
+  );
+
+  // "Re-read for me": the student selected something they didn't follow
+  // while the text was being read (or just while reading). The narration
+  // pauses, the selection is re-read slowly, then a plain-language
+  // explanation (grounded in the text around it) is shown AND read out.
+  // "Continue reading" resumes from the start of the sentence that was
+  // interrupted.
+  const rereadSelection = useCallback(
+    (selectedText, isSingleWord, contextText) => {
+      const trimmed = (selectedText || '').trim();
+      if (!trimmed) return;
+      Speech.stop(); // pauses the narration; resumeRef keeps the position
+      setCanResume(!!resumeRef.current);
+
+      let selectionDone = false;
+      let explanation = null;
+      const speakExplanation = () => Speech.speak(explanation, { rate: 0.95 });
+
+      Speech.speak(trimmed, {
+        rate: 0.8,
         onDone: () => {
-          setSpeakingIndex(null);
-          setSpeakingCharIndex(null);
-        },
-        onStopped: () => {
-          setSpeakingIndex(null);
-          setSpeakingCharIndex(null);
-        },
-        onError: () => {
-          setSpeakingIndex(null);
-          setSpeakingCharIndex(null);
+          selectionDone = true;
+          if (explanation) speakExplanation();
         },
       });
+      handleExplainSelection(trimmed, isSingleWord, contextText, (definition) => {
+        explanation = definition;
+        if (selectionDone) speakExplanation();
+      });
     },
-    [speakingIndex]
+    [handleExplainSelection]
   );
+
+  const closePopup = useCallback(() => {
+    Speech.stop();
+    resumeRef.current = null;
+    setCanResume(false);
+    setPopup(null);
+  }, []);
+
+  const resumeReading = useCallback(() => {
+    const r = resumeRef.current;
+    setPopup(null);
+    setCanResume(false);
+    Speech.stop();
+    if (!r) return;
+    // Back up to the start of the interrupted sentence so it's heard whole.
+    const before = r.text.slice(0, r.charIndex);
+    const cut = Math.max(before.lastIndexOf('. '), before.lastIndexOf('! '), before.lastIndexOf('? '), before.lastIndexOf('\n'));
+    startSpeech(r.kind, r.index, r.text, cut === -1 ? 0 : cut + 2);
+  }, [startSpeech]);
+
+  // The current word/phrase selection, reported by whichever TappableText
+  // holds it and shown in the always-visible SelectionBar above the input.
+  // Only one selection is active at a time: picking in a new passage clears
+  // the previous one.
+  const selOwnerRef = useRef(null);
+  const [selectionBar, setSelectionBar] = useState(null);
+  const handleSelectionChange = useCallback((info) => {
+    if (info.text) {
+      const prev = selOwnerRef.current;
+      if (prev && prev.id !== info.id) prev.clear();
+      selOwnerRef.current = info;
+      setSelectionBar(info);
+    } else if (selOwnerRef.current && selOwnerRef.current.id === info.id) {
+      selOwnerRef.current = null;
+      setSelectionBar(null);
+    }
+  }, []);
+
+  // ---------- "Listen on loop": hear a selection again and again ----------
+  // For a word or phrase the student couldn't catch or follow: the narration
+  // pauses (resumeRef keeps its place), the selection repeats with a short
+  // pause between plays until they stop it, and "Continue reading" picks the
+  // narration back up from the start of the interrupted sentence.
+  const loopRef = useRef({ active: false, timer: null, slow: false, count: 0, text: '', context: '' });
+  const [loop, setLoop] = useState(null); // { text, count, slow } | null
+
+  const stopLoopAudio = useCallback(() => {
+    const L = loopRef.current;
+    L.active = false;
+    clearTimeout(L.timer);
+    Speech.stop();
+  }, []);
+
+  const speakLoopOnce = useCallback(() => {
+    const L = loopRef.current;
+    if (!L.active) return;
+    Speech.speak(L.text, {
+      rate: L.slow ? 0.6 : 1.0,
+      onDone: () => {
+        if (!L.active) return;
+        L.count += 1;
+        setLoop((cur) => (cur ? { ...cur, count: L.count } : cur));
+        L.timer = setTimeout(speakLoopOnce, 700); // a beat between repeats
+      },
+      onError: () => {
+        L.active = false;
+      },
+    });
+  }, []);
+
+  const startLoop = useCallback(
+    (selectedText, contextText) => {
+      const trimmed = (selectedText || '').trim();
+      if (!trimmed) return;
+      const L = loopRef.current;
+      clearTimeout(L.timer);
+      Speech.stop(); // pauses the narration; resumeRef keeps the position
+      setPopup(null);
+      setCanResume(!!resumeRef.current);
+      Object.assign(L, { active: true, slow: false, count: 0, text: trimmed, context: contextText || '' });
+      setLoop({ text: trimmed, count: 0, slow: false });
+      L.timer = setTimeout(speakLoopOnce, 150); // let the stop above settle
+    },
+    [speakLoopOnce]
+  );
+
+  const toggleLoopSlow = useCallback(() => {
+    const L = loopRef.current;
+    L.slow = !L.slow; // takes effect from the next repeat
+    setLoop((cur) => (cur ? { ...cur, slow: L.slow } : cur));
+  }, []);
+
+  const stopLoop = useCallback(() => {
+    stopLoopAudio();
+    resumeRef.current = null;
+    setCanResume(false);
+    setLoop(null);
+  }, [stopLoopAudio]);
+
+  const explainLoopSelection = useCallback(() => {
+    const { text, context } = loopRef.current;
+    stopLoopAudio();
+    setLoop(null);
+    rereadSelection(text, !/\s/.test(text), context);
+  }, [stopLoopAudio, rereadSelection]);
+
+  const continueAfterLoop = useCallback(() => {
+    stopLoopAudio();
+    setLoop(null);
+    resumeReading();
+  }, [stopLoopAudio, resumeReading]);
 
   // ---------- PDF reader pivot: reader-mode handlers (§4, §5) ----------
 
@@ -556,13 +735,21 @@ export default function SessionScreen({ route, navigation }) {
         handleExplainSelection(selectionText, true, pageContext);
         return;
       }
+      if (action === 'loop') {
+        startLoop(selectionText, pageContext);
+        return;
+      }
+      if (action === 'explain') {
+        rereadSelection(selectionText, !/\s/.test(selectionText.trim()), pageContext);
+        return;
+      }
       if (action === 'custom') {
         setCustomPrompt({ selectionText, pageIndex, pageContext });
         return;
       }
       runReaderSelectionAction({ selectionText, pageIndex, pageContext, action });
     },
-    [handleExplainSelection, runReaderSelectionAction]
+    [handleExplainSelection, rereadSelection, startLoop, runReaderSelectionAction]
   );
 
   const submitCustomPrompt = () => {
@@ -659,29 +846,14 @@ export default function SessionScreen({ route, navigation }) {
   const toggleSpeakReader = useCallback(() => {
     if (readerSpeaking) {
       Speech.stop();
+      resumeRef.current = null;
       setReaderSpeaking(false);
       pdfReaderRef.current?.highlightAtChar(null);
       return;
     }
     if (!readerPageText) return;
-    Speech.stop();
-    setReaderSpeaking(true);
-    Speech.speak(readerPageText, {
-      onBoundary: (event) => pdfReaderRef.current?.highlightAtChar(event.charIndex),
-      onDone: () => {
-        setReaderSpeaking(false);
-        pdfReaderRef.current?.highlightAtChar(null);
-      },
-      onStopped: () => {
-        setReaderSpeaking(false);
-        pdfReaderRef.current?.highlightAtChar(null);
-      },
-      onError: () => {
-        setReaderSpeaking(false);
-        pdfReaderRef.current?.highlightAtChar(null);
-      },
-    });
-  }, [readerSpeaking, readerPageText]);
+    startSpeech('reader', null, readerPageText, 0);
+  }, [readerSpeaking, readerPageText, startSpeech]);
 
   // §5 item 4 ("bookmarks parity"): bookmarking a PDF page itself, using
   // the exact same addBookmark()/removeBookmark() functions the message-
@@ -924,18 +1096,16 @@ export default function SessionScreen({ route, navigation }) {
         </Text>
       )}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.quickActionsRow}
-      >
+      <SelectionBar selection={selectionBar} />
+
+      <View style={styles.quickActionsRow}>
         <Pressable style={styles.quizChip} onPress={handleQuizMe} disabled={sending}>
-          <Ionicons name="help-circle-outline" size={15} color={colors.lamp} />
+          <Ionicons name="help-circle-outline" size={18} color={colors.lamp} />
           <Text style={styles.quizChipText}>Quiz me</Text>
         </Pressable>
         {isReaderMode && (
           <Pressable style={styles.quizChip} onPress={handleQuizDocument} disabled={sending || extractingForQuiz}>
-            <Ionicons name="library-outline" size={15} color={colors.lamp} />
+            <Ionicons name="library-outline" size={18} color={colors.lamp} />
             <Text style={styles.quizChipText}>
               {extractingForQuiz ? 'Reading document…' : 'Quiz whole document'}
             </Text>
@@ -948,11 +1118,11 @@ export default function SessionScreen({ route, navigation }) {
             onPress={() => handleQuickAction(action.prompt)}
             disabled={sending}
           >
-            <Ionicons name={action.icon} size={14} color={colors.textMuted} />
+            <Ionicons name={action.icon} size={17} color={colors.textPrimary} />
             <Text style={styles.actionChipText}>{action.label}</Text>
           </Pressable>
         ))}
-      </ScrollView>
+      </View>
 
       <View style={styles.inputBar}>
         {!isReaderMode && (
@@ -1024,9 +1194,11 @@ export default function SessionScreen({ route, navigation }) {
               message={item}
               onExplain={
                 item.role === 'model' && item.type === 'text'
-                  ? (text, isSingleWord) => handleExplainSelection(text, isSingleWord, item.content)
+                  ? (text, isSingleWord) => rereadSelection(text, isSingleWord, item.content)
                   : undefined
               }
+              onLoop={item.role === 'model' && item.type === 'text' ? (text) => startLoop(text, item.content) : undefined}
+              onSelectionChange={item.role === 'model' && item.type === 'text' ? handleSelectionChange : undefined}
               onQuizComplete={handleQuizComplete}
               speaking={speakingIndex === index}
               onToggleSpeak={() => toggleSpeak(index, item.content)}
@@ -1133,7 +1305,9 @@ export default function SessionScreen({ route, navigation }) {
                         if (sourceMessage.type === 'image') setViewerUri(sourceMessage.content.url);
                         else if (sourceMessage.content.url) Linking.openURL(sourceMessage.content.url);
                       }}
-                      onExplain={(text, isSingleWord) => handleExplainSelection(text, isSingleWord, item.content)}
+                      onExplain={(text, isSingleWord) => rereadSelection(text, isSingleWord, item.content)}
+                      onLoop={(text) => startLoop(text, item.content)}
+                      onSelectionChange={handleSelectionChange}
                       speaking={speakingIndex === index}
                       onToggleSpeak={() => toggleSpeak(index, item.content)}
                       speakingCharIndex={speakingCharIndex}
@@ -1151,9 +1325,11 @@ export default function SessionScreen({ route, navigation }) {
                     message={item}
                     onExplain={
                       item.role === 'model' && item.type === 'text'
-                        ? (text, isSingleWord) => handleExplainSelection(text, isSingleWord, item.content)
+                        ? (text, isSingleWord) => rereadSelection(text, isSingleWord, item.content)
                         : undefined
                     }
+                    onLoop={item.role === 'model' && item.type === 'text' ? (text) => startLoop(text, item.content) : undefined}
+                    onSelectionChange={item.role === 'model' && item.type === 'text' ? handleSelectionChange : undefined}
                     onQuizComplete={handleQuizComplete}
                     speaking={speakingIndex === index}
                     onToggleSpeak={() => toggleSpeak(index, item.content)}
@@ -1171,7 +1347,19 @@ export default function SessionScreen({ route, navigation }) {
         </>
       )}
 
-      <WordExplainModal popup={popup} onClose={() => setPopup(null)} onMarkLearned={markWordLearned} />
+      <WordExplainModal
+        popup={popup}
+        onClose={closePopup}
+        onMarkLearned={markWordLearned}
+        onResume={canResume ? resumeReading : undefined}
+      />
+      <LoopListenModal
+        loop={loop}
+        onStop={stopLoop}
+        onToggleSlow={toggleLoopSlow}
+        onExplain={explainLoopSelection}
+        onContinue={canResume ? continueAfterLoop : undefined}
+      />
       <ImageViewerModal visible={!!viewerUri} uri={viewerUri} onClose={() => setViewerUri(null)} />
 
       <Modal visible={renameVisible} transparent animationType="fade" onRequestClose={() => setRenameVisible(false)}>
@@ -1348,7 +1536,9 @@ function createStyles({ colors, fonts, spacing, radius }) {
       paddingHorizontal: spacing.md,
       paddingBottom: 4,
     },
-    quickActionsRow: { paddingHorizontal: spacing.sm, paddingBottom: spacing.xs, alignItems: 'center' },
+    // Wraps onto a second line instead of scrolling sideways, so every
+    // action is visible without hunting for it.
+    quickActionsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: spacing.sm, paddingBottom: spacing.xs, alignItems: 'center' },
     inputBar: {
       flexDirection: 'row',
       alignItems: 'flex-end',
@@ -1364,14 +1554,15 @@ function createStyles({ colors, fonts, spacing, radius }) {
     quizChip: {
       flexDirection: 'row',
       alignItems: 'center',
-      borderWidth: 1,
+      borderWidth: 1.5,
       borderColor: colors.lamp,
       borderRadius: radius.pill,
-      paddingVertical: 7,
-      paddingHorizontal: 10,
+      paddingVertical: 9,
+      paddingHorizontal: 14,
       marginRight: spacing.xs,
+      marginBottom: spacing.xs,
     },
-    quizChipText: { fontFamily: fonts.bodyMedium, fontSize: 11.5, color: colors.lamp, marginLeft: 4 },
+    quizChipText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.lamp, marginLeft: 6 },
     // §2: quick reading-shaped actions alongside "Quiz me" — most
     // interactions guided rather than "type anything to the bot," while
     // free text (below) stays available for anything these don't cover.
@@ -1379,14 +1570,15 @@ function createStyles({ colors, fonts, spacing, radius }) {
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: colors.paperRaised,
-      borderWidth: 1,
-      borderColor: colors.border,
+      borderWidth: 1.5,
+      borderColor: colors.textFaint,
       borderRadius: radius.pill,
-      paddingVertical: 7,
-      paddingHorizontal: 10,
+      paddingVertical: 9,
+      paddingHorizontal: 14,
       marginRight: spacing.xs,
+      marginBottom: spacing.xs,
     },
-    actionChipText: { fontFamily: fonts.bodyMedium, fontSize: 11.5, color: colors.textMuted, marginLeft: 4 },
+    actionChipText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.textPrimary, marginLeft: 6 },
     textInput: {
       flex: 1,
       backgroundColor: colors.paper,
