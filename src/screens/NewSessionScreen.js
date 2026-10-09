@@ -30,7 +30,9 @@ import {
   friendlyUploadErrorMessage,
   MAX_UPLOAD_BYTES,
   readPickedFileAsText,
+  readPickedFileAsBase64,
 } from '../services/uploads';
+import { extractDocxText } from '../services/docx';
 import { useAuth } from '../contexts/AuthContext';
 import { LEVELS, nextLevel } from '../constants/levels';
 
@@ -44,11 +46,14 @@ import { LEVELS, nextLevel } from '../constants/levels';
 //                     the exact same paste-text pipeline as startFromText
 //   'unsupported' -> nothing built yet can read it (e.g. .docx, .epub) —
 //                     ask the person to convert it or paste the text instead
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
 function classifyPickedFile(asset) {
   const ext = (asset.name || '').split('.').pop()?.toLowerCase();
   const mimeType = asset.mimeType || '';
 
   if (mimeType === 'application/pdf' || ext === 'pdf') return 'pdf';
+  if (ext === 'docx' || mimeType === DOCX_MIME) return 'docx';
   if (mimeType.startsWith('text/') || ['txt', 'md', 'markdown'].includes(ext)) return 'text';
   return 'unsupported';
 }
@@ -230,7 +235,7 @@ export default function NewSessionScreen({ navigation }) {
     let result;
     try {
       result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'text/plain', 'text/markdown', 'text/*'],
+        type: ['application/pdf', DOCX_MIME, 'text/plain', 'text/markdown', 'text/*'],
         copyToCacheDirectory: true,
       });
     } catch (err) {
@@ -245,7 +250,7 @@ export default function NewSessionScreen({ navigation }) {
     const kind = classifyPickedFile(asset);
     if (kind === 'unsupported') {
       const ext = (asset.name || 'that file').split('.').pop();
-      setError(`Reading Mate can't read .${ext} files yet — try a PDF, a .txt file, or paste the text instead.`);
+      setError(`Reading Mate can't read .${ext} files yet — try a PDF, a Word (.docx) file, a .txt file, or paste the text instead.`);
       return;
     }
     if ((asset.size ?? 0) > MAX_UPLOAD_BYTES) {
@@ -315,9 +320,13 @@ export default function NewSessionScreen({ navigation }) {
         // plain text, so the app reads it itself and feeds it through the
         // exact same pipeline as pasted text (no Storage upload at all —
         // there are no meaningful bytes here beyond the string itself).
-        const passage = (await readPickedFileAsText(asset.uri)).trim();
+        const passage = (
+          kind === 'docx'
+            ? await extractDocxText(await readPickedFileAsBase64(asset.uri))
+            : await readPickedFileAsText(asset.uri)
+        ).trim();
         if (!passage) {
-          setError('That file looks empty.');
+          setError('That file looks empty (or has no readable text).');
           setLoading(false);
           return;
         }
