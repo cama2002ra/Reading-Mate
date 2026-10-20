@@ -11,6 +11,7 @@ import {
   Alert,
   ScrollView,
   Linking,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Speech from 'expo-speech';
@@ -22,8 +23,6 @@ import ChatBubble from '../components/ChatBubble';
 import ReadingPane from '../components/ReadingPane';
 import PdfReader from '../components/PdfReader';
 import WordExplainModal from '../components/WordExplainModal';
-import LoopListenModal from '../components/LoopListenModal';
-import SelectionBar from '../components/SelectionBar';
 import ImageViewerModal from '../components/ImageViewerModal';
 import AttachmentInstructionModal from '../components/AttachmentInstructionModal';
 import { useTheme } from '../contexts/ThemeContext';
@@ -123,8 +122,12 @@ function isSameDay(tsA, tsB) {
 export default function SessionScreen({ route, navigation }) {
   const { sessionId, pageIndex: initialPageIndex } = route.params;
   const theme = useTheme();
-  const { colors } = theme;
+  const { colors, fonts, radius } = theme;
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { width: screenWidth } = useWindowDimensions();
+  const isDesktop = screenWidth >= 768;
+  const [workspaceMode, setWorkspaceMode] = useState('split'); // 'split' | 'doc' | 'chat'
+
   const { user } = useAuth();
   const [session, setSession] = useState(null);
   const [inputText, setInputText] = useState('');
@@ -180,47 +183,149 @@ export default function SessionScreen({ route, navigation }) {
     }
   }, [session, navigation]);
 
+  const isReaderMode = session?.mode === 'reader';
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: session?.title || 'Reading session',
-      // §7 backlog: manual rename, next to the auto-generated title.
-      // §3: a way back to the list that doesn't rely purely on the back
-      // stack, since a session can also be reached via a deep link from
-      // Home where that stack may only have one entry.
       headerRight: () =>
         session ? (
-          <View style={{ flexDirection: 'row' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {isReaderMode && (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  backgroundColor: colors.paperRaised,
+                  borderRadius: radius.pill,
+                  padding: 2,
+                  marginRight: 10,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+              >
+                <Pressable
+                  onPress={() => setWorkspaceMode('doc')}
+                  hitSlop={4}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: isDesktop ? 8 : 6,
+                    paddingVertical: 3,
+                    borderRadius: radius.pill,
+                    backgroundColor: workspaceMode === 'doc' ? colors.lamp : 'transparent',
+                  }}
+                  accessibilityLabel="Document focus"
+                >
+                  <Ionicons
+                    name="document-text"
+                    size={14}
+                    color={workspaceMode === 'doc' ? colors.ink : colors.textMuted}
+                  />
+                  {isDesktop && (
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontFamily: fonts.bodyMedium,
+                        marginLeft: 4,
+                        color: workspaceMode === 'doc' ? colors.ink : colors.textMuted,
+                      }}
+                    >
+                      Doc
+                    </Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={() => setWorkspaceMode('split')}
+                  hitSlop={4}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: isDesktop ? 8 : 6,
+                    paddingVertical: 3,
+                    borderRadius: radius.pill,
+                    backgroundColor: workspaceMode === 'split' ? colors.lamp : 'transparent',
+                  }}
+                  accessibilityLabel="Split view"
+                >
+                  <Ionicons
+                    name="grid-outline"
+                    size={14}
+                    color={workspaceMode === 'split' ? colors.ink : colors.textMuted}
+                  />
+                  {isDesktop && (
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontFamily: fonts.bodyMedium,
+                        marginLeft: 4,
+                        color: workspaceMode === 'split' ? colors.ink : colors.textMuted,
+                      }}
+                    >
+                      Split
+                    </Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={() => setWorkspaceMode('chat')}
+                  hitSlop={4}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: isDesktop ? 8 : 6,
+                    paddingVertical: 3,
+                    borderRadius: radius.pill,
+                    backgroundColor: workspaceMode === 'chat' ? colors.lamp : 'transparent',
+                  }}
+                  accessibilityLabel="AI Chat focus"
+                >
+                  <Ionicons
+                    name="chatbubbles-outline"
+                    size={14}
+                    color={workspaceMode === 'chat' ? colors.ink : colors.textMuted}
+                  />
+                  {isDesktop && (
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontFamily: fonts.bodyMedium,
+                        marginLeft: 4,
+                        color: workspaceMode === 'chat' ? colors.ink : colors.textMuted,
+                      }}
+                    >
+                      Chat
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+            )}
             <Pressable
               hitSlop={10}
-              style={{ marginRight: 18 }}
+              style={{ marginRight: 12 }}
               onPress={() => {
                 setRenameText(session.title || '');
                 setRenameVisible(true);
               }}
             >
-              <Ionicons name="pencil-outline" size={19} color={colors.textMuted} />
+              <Ionicons name="pencil-outline" size={18} color={colors.textMuted} />
             </Pressable>
             <Pressable hitSlop={10} onPress={() => navigation.navigate('SessionsList')}>
-              <Ionicons name="list-outline" size={21} color={colors.textMuted} />
+              <Ionicons name="list-outline" size={20} color={colors.textMuted} />
             </Pressable>
           </View>
         ) : null,
     });
-  }, [navigation, session, colors]);
+  }, [navigation, session, colors, fonts, radius, isReaderMode, workspaceMode, isDesktop]);
 
   // Stop any in-flight read-aloud when leaving this session (navigating
   // away, or the sessionId prop changing under a reused screen instance) —
   // otherwise a reply could keep narrating over whatever's on screen next.
   useEffect(() => {
     return () => {
-      loopRef.current.active = false;
-      clearTimeout(loopRef.current.timer);
       Speech.stop();
     };
   }, [sessionId]);
 
   const messages = session?.messages || [];
-  const isReaderMode = session?.mode === 'reader';
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
@@ -382,7 +487,7 @@ export default function SessionScreen({ route, navigation }) {
   // picks which popup mode (and which Gemini call) applies. Replaces the
   // old separate handleWordPress/handleSentencePress pair now that both
   // come from the same "Explain" button instead of two different gestures.
-  const handleExplainSelection = useCallback(async (selectedText, isSingleWord, contextText, onResult) => {
+  const handleExplainSelection = useCallback(async (selectedText, isSingleWord, contextText) => {
     const trimmed = (selectedText || '').trim();
     if (!trimmed) return;
 
@@ -393,7 +498,6 @@ export default function SessionScreen({ route, navigation }) {
       try {
         const definition = await explainWord(word, contextText);
         setPopup({ mode: 'word', term: word, loading: false, definition, error: null });
-        onResult?.(definition);
       } catch (err) {
         setPopup({
           mode: 'word',
@@ -410,7 +514,6 @@ export default function SessionScreen({ route, navigation }) {
     try {
       const definition = await explainSentence(trimmed, contextText);
       setPopup({ mode: 'sentence', term: trimmed, loading: false, definition, error: null });
-      onResult?.(definition);
     } catch (err) {
       setPopup({
         mode: 'sentence',
@@ -435,208 +538,35 @@ export default function SessionScreen({ route, navigation }) {
   // live word-highlight in the reading pane (see ReadingPane.js /
   // TappableText.js) — the single change most likely to make this feel
   // like a reading experience rather than "play this message aloud."
-  // Remembers where the read-aloud stopped so "Re-read for me" can pause
-  // the narration, deal with the confusing part, and then pick the reading
-  // back up. { kind: 'chat' | 'reader', index, text, charIndex } | null.
-  const resumeRef = useRef(null);
-  const [canResume, setCanResume] = useState(false);
-
-  // The one place read-aloud starts, for both modes. `offset` lets a
-  // resumed reading start part-way through `text`; boundary indexes are
-  // shifted back by it so the live highlight still lines up with `text`.
-  const startSpeech = useCallback((kind, index, text, offset = 0) => {
-    Speech.stop();
-    resumeRef.current = { kind, index, text, charIndex: offset };
-    if (kind === 'chat') {
-      setSpeakingIndex(index);
-      setSpeakingCharIndex(offset);
-    } else {
-      setReaderSpeaking(true);
-    }
-    const clear = () => {
-      if (kind === 'chat') {
-        setSpeakingIndex(null);
-        setSpeakingCharIndex(null);
-      } else {
-        setReaderSpeaking(false);
-        pdfReaderRef.current?.highlightAtChar(null);
-      }
-    };
-    Speech.speak(text.slice(offset), {
-      onBoundary: (event) => {
-        const abs = offset + event.charIndex;
-        if (resumeRef.current) resumeRef.current.charIndex = abs;
-        if (kind === 'chat') setSpeakingCharIndex(abs);
-        else pdfReaderRef.current?.highlightAtChar(abs);
-      },
-      onDone: () => {
-        resumeRef.current = null;
-        clear();
-      },
-      onStopped: clear, // keeps resumeRef — a stop may be "pause to re-read"
-      onError: clear,
-    });
-  }, []);
-
-  // Only one reply can be read aloud at a time. Tapping the button on the
-  // message that's already speaking stops it; tapping a different one
-  // interrupts and starts the new one.
   const toggleSpeak = useCallback(
     (index, text) => {
       if (speakingIndex === index) {
         Speech.stop();
-        resumeRef.current = null;
         setSpeakingIndex(null);
         setSpeakingCharIndex(null);
         return;
       }
-      startSpeech('chat', index, text, 0);
-    },
-    [speakingIndex, startSpeech]
-  );
-
-  // "Re-read for me": the student selected something they didn't follow
-  // while the text was being read (or just while reading). The narration
-  // pauses, the selection is re-read slowly, then a plain-language
-  // explanation (grounded in the text around it) is shown AND read out.
-  // "Continue reading" resumes from the start of the sentence that was
-  // interrupted.
-  const rereadSelection = useCallback(
-    (selectedText, isSingleWord, contextText) => {
-      const trimmed = (selectedText || '').trim();
-      if (!trimmed) return;
-      Speech.stop(); // pauses the narration; resumeRef keeps the position
-      setCanResume(!!resumeRef.current);
-
-      let selectionDone = false;
-      let explanation = null;
-      const speakExplanation = () => Speech.speak(explanation, { rate: 0.95 });
-
-      Speech.speak(trimmed, {
-        rate: 0.8,
+      Speech.stop();
+      setSpeakingIndex(index);
+      setSpeakingCharIndex(0);
+      Speech.speak(text, {
+        onBoundary: (event) => setSpeakingCharIndex(event.charIndex),
         onDone: () => {
-          selectionDone = true;
-          if (explanation) speakExplanation();
+          setSpeakingIndex(null);
+          setSpeakingCharIndex(null);
+        },
+        onStopped: () => {
+          setSpeakingIndex(null);
+          setSpeakingCharIndex(null);
+        },
+        onError: () => {
+          setSpeakingIndex(null);
+          setSpeakingCharIndex(null);
         },
       });
-      handleExplainSelection(trimmed, isSingleWord, contextText, (definition) => {
-        explanation = definition;
-        if (selectionDone) speakExplanation();
-      });
     },
-    [handleExplainSelection]
+    [speakingIndex]
   );
-
-  const closePopup = useCallback(() => {
-    Speech.stop();
-    resumeRef.current = null;
-    setCanResume(false);
-    setPopup(null);
-  }, []);
-
-  const resumeReading = useCallback(() => {
-    const r = resumeRef.current;
-    setPopup(null);
-    setCanResume(false);
-    Speech.stop();
-    if (!r) return;
-    // Back up to the start of the interrupted sentence so it's heard whole.
-    const before = r.text.slice(0, r.charIndex);
-    const cut = Math.max(before.lastIndexOf('. '), before.lastIndexOf('! '), before.lastIndexOf('? '), before.lastIndexOf('\n'));
-    startSpeech(r.kind, r.index, r.text, cut === -1 ? 0 : cut + 2);
-  }, [startSpeech]);
-
-  // The current word/phrase selection, reported by whichever TappableText
-  // holds it and shown in the always-visible SelectionBar above the input.
-  // Only one selection is active at a time: picking in a new passage clears
-  // the previous one.
-  const selOwnerRef = useRef(null);
-  const [selectionBar, setSelectionBar] = useState(null);
-  const handleSelectionChange = useCallback((info) => {
-    if (info.text) {
-      const prev = selOwnerRef.current;
-      if (prev && prev.id !== info.id) prev.clear();
-      selOwnerRef.current = info;
-      setSelectionBar(info);
-    } else if (selOwnerRef.current && selOwnerRef.current.id === info.id) {
-      selOwnerRef.current = null;
-      setSelectionBar(null);
-    }
-  }, []);
-
-  // ---------- "Listen on loop": hear a selection again and again ----------
-  // For a word or phrase the student couldn't catch or follow: the narration
-  // pauses (resumeRef keeps its place), the selection repeats with a short
-  // pause between plays until they stop it, and "Continue reading" picks the
-  // narration back up from the start of the interrupted sentence.
-  const loopRef = useRef({ active: false, timer: null, slow: false, count: 0, text: '', context: '' });
-  const [loop, setLoop] = useState(null); // { text, count, slow } | null
-
-  const stopLoopAudio = useCallback(() => {
-    const L = loopRef.current;
-    L.active = false;
-    clearTimeout(L.timer);
-    Speech.stop();
-  }, []);
-
-  const speakLoopOnce = useCallback(() => {
-    const L = loopRef.current;
-    if (!L.active) return;
-    Speech.speak(L.text, {
-      rate: L.slow ? 0.6 : 1.0,
-      onDone: () => {
-        if (!L.active) return;
-        L.count += 1;
-        setLoop((cur) => (cur ? { ...cur, count: L.count } : cur));
-        L.timer = setTimeout(speakLoopOnce, 700); // a beat between repeats
-      },
-      onError: () => {
-        L.active = false;
-      },
-    });
-  }, []);
-
-  const startLoop = useCallback(
-    (selectedText, contextText) => {
-      const trimmed = (selectedText || '').trim();
-      if (!trimmed) return;
-      const L = loopRef.current;
-      clearTimeout(L.timer);
-      Speech.stop(); // pauses the narration; resumeRef keeps the position
-      setPopup(null);
-      setCanResume(!!resumeRef.current);
-      Object.assign(L, { active: true, slow: false, count: 0, text: trimmed, context: contextText || '' });
-      setLoop({ text: trimmed, count: 0, slow: false });
-      L.timer = setTimeout(speakLoopOnce, 150); // let the stop above settle
-    },
-    [speakLoopOnce]
-  );
-
-  const toggleLoopSlow = useCallback(() => {
-    const L = loopRef.current;
-    L.slow = !L.slow; // takes effect from the next repeat
-    setLoop((cur) => (cur ? { ...cur, slow: L.slow } : cur));
-  }, []);
-
-  const stopLoop = useCallback(() => {
-    stopLoopAudio();
-    resumeRef.current = null;
-    setCanResume(false);
-    setLoop(null);
-  }, [stopLoopAudio]);
-
-  const explainLoopSelection = useCallback(() => {
-    const { text, context } = loopRef.current;
-    stopLoopAudio();
-    setLoop(null);
-    rereadSelection(text, !/\s/.test(text), context);
-  }, [stopLoopAudio, rereadSelection]);
-
-  const continueAfterLoop = useCallback(() => {
-    stopLoopAudio();
-    setLoop(null);
-    resumeReading();
-  }, [stopLoopAudio, resumeReading]);
 
   // ---------- PDF reader pivot: reader-mode handlers (§4, §5) ----------
 
@@ -735,21 +665,13 @@ export default function SessionScreen({ route, navigation }) {
         handleExplainSelection(selectionText, true, pageContext);
         return;
       }
-      if (action === 'loop') {
-        startLoop(selectionText, pageContext);
-        return;
-      }
-      if (action === 'explain') {
-        rereadSelection(selectionText, !/\s/.test(selectionText.trim()), pageContext);
-        return;
-      }
       if (action === 'custom') {
         setCustomPrompt({ selectionText, pageIndex, pageContext });
         return;
       }
       runReaderSelectionAction({ selectionText, pageIndex, pageContext, action });
     },
-    [handleExplainSelection, rereadSelection, startLoop, runReaderSelectionAction]
+    [handleExplainSelection, runReaderSelectionAction]
   );
 
   const submitCustomPrompt = () => {
@@ -846,14 +768,29 @@ export default function SessionScreen({ route, navigation }) {
   const toggleSpeakReader = useCallback(() => {
     if (readerSpeaking) {
       Speech.stop();
-      resumeRef.current = null;
       setReaderSpeaking(false);
       pdfReaderRef.current?.highlightAtChar(null);
       return;
     }
     if (!readerPageText) return;
-    startSpeech('reader', null, readerPageText, 0);
-  }, [readerSpeaking, readerPageText, startSpeech]);
+    Speech.stop();
+    setReaderSpeaking(true);
+    Speech.speak(readerPageText, {
+      onBoundary: (event) => pdfReaderRef.current?.highlightAtChar(event.charIndex),
+      onDone: () => {
+        setReaderSpeaking(false);
+        pdfReaderRef.current?.highlightAtChar(null);
+      },
+      onStopped: () => {
+        setReaderSpeaking(false);
+        pdfReaderRef.current?.highlightAtChar(null);
+      },
+      onError: () => {
+        setReaderSpeaking(false);
+        pdfReaderRef.current?.highlightAtChar(null);
+      },
+    });
+  }, [readerSpeaking, readerPageText]);
 
   // §5 item 4 ("bookmarks parity"): bookmarking a PDF page itself, using
   // the exact same addBookmark()/removeBookmark() functions the message-
@@ -1096,16 +1033,18 @@ export default function SessionScreen({ route, navigation }) {
         </Text>
       )}
 
-      <SelectionBar selection={selectionBar} />
-
-      <View style={styles.quickActionsRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.quickActionsRow}
+      >
         <Pressable style={styles.quizChip} onPress={handleQuizMe} disabled={sending}>
-          <Ionicons name="help-circle-outline" size={18} color={colors.lamp} />
+          <Ionicons name="help-circle-outline" size={15} color={colors.lamp} />
           <Text style={styles.quizChipText}>Quiz me</Text>
         </Pressable>
         {isReaderMode && (
           <Pressable style={styles.quizChip} onPress={handleQuizDocument} disabled={sending || extractingForQuiz}>
-            <Ionicons name="library-outline" size={18} color={colors.lamp} />
+            <Ionicons name="library-outline" size={15} color={colors.lamp} />
             <Text style={styles.quizChipText}>
               {extractingForQuiz ? 'Reading document…' : 'Quiz whole document'}
             </Text>
@@ -1118,11 +1057,11 @@ export default function SessionScreen({ route, navigation }) {
             onPress={() => handleQuickAction(action.prompt)}
             disabled={sending}
           >
-            <Ionicons name={action.icon} size={17} color={colors.textPrimary} />
+            <Ionicons name={action.icon} size={14} color={colors.textMuted} />
             <Text style={styles.actionChipText}>{action.label}</Text>
           </Pressable>
         ))}
-      </View>
+      </ScrollView>
 
       <View style={styles.inputBar}>
         {!isReaderMode && (
@@ -1194,11 +1133,9 @@ export default function SessionScreen({ route, navigation }) {
               message={item}
               onExplain={
                 item.role === 'model' && item.type === 'text'
-                  ? (text, isSingleWord) => rereadSelection(text, isSingleWord, item.content)
+                  ? (text, isSingleWord) => handleExplainSelection(text, isSingleWord, item.content)
                   : undefined
               }
-              onLoop={item.role === 'model' && item.type === 'text' ? (text) => startLoop(text, item.content) : undefined}
-              onSelectionChange={item.role === 'model' && item.type === 'text' ? handleSelectionChange : undefined}
               onQuizComplete={handleQuizComplete}
               speaking={speakingIndex === index}
               onToggleSpeak={() => toggleSpeak(index, item.content)}
@@ -1217,48 +1154,119 @@ export default function SessionScreen({ route, navigation }) {
   return (
     <ScreenContainer scroll={false}>
       {isReaderMode ? (
-        <View style={styles.readerScreen}>
-          <View style={styles.readerPanel}>
-            <PdfReader
-              ref={pdfReaderRef}
-              fileUrl={session.sourceFile?.url}
-              onDocLoaded={handleReaderDocLoaded}
-              onDocError={(msg) => setError(msg)}
-              onPageChanged={handleReaderPageChanged}
-              onSelectionAction={handleReaderSelectionAction}
-              onScannedPage={handleReaderScannedPage}
-              onFullTextExtracted={handleFullTextExtracted}
-            />
-            <View style={styles.readerToolbar}>
-              <Text style={styles.readerToolbarHint} numberOfLines={1}>
-                {readerPageScanned ? 'This page looks scanned — use "Read it" above.' : session.sourceFile?.name || 'Document'}
-              </Text>
-              <View style={{ flexDirection: 'row' }}>
-                <Pressable
-                  hitSlop={8}
-                  onPress={toggleSpeakReader}
-                  disabled={!readerPageText}
-                  style={styles.readerToolbarBtn}
-                >
-                  <Ionicons
-                    name={readerSpeaking ? 'stop-circle' : 'volume-medium-outline'}
-                    size={17}
-                    color={readerSpeaking ? colors.lamp : colors.textFaint}
-                  />
-                </Pressable>
-                <Pressable hitSlop={8} onPress={togglePageBookmark} style={styles.readerToolbarBtn}>
-                  <Ionicons
-                    name={pageBookmarkMap.has(readerPageIndex) ? 'star' : 'star-outline'}
-                    size={17}
-                    color={pageBookmarkMap.has(readerPageIndex) ? colors.lamp : colors.textFaint}
-                  />
-                </Pressable>
+        <View
+          style={[
+            styles.readerScreen,
+            isDesktop && styles.readerScreenDesktop,
+            workspaceMode === 'split' && isDesktop && { flexDirection: 'row' },
+          ]}
+        >
+          {(workspaceMode === 'doc' || workspaceMode === 'split') && (
+            <View
+              style={[
+                styles.readerPanel,
+                workspaceMode === 'doc' && styles.panelFull,
+                workspaceMode === 'split' && isDesktop && styles.panelDesktopSplitLeft,
+                workspaceMode === 'split' && !isDesktop && styles.panelMobileSplitTop,
+              ]}
+            >
+              <PdfReader
+                ref={pdfReaderRef}
+                fileUrl={session.sourceFile?.url}
+                onDocLoaded={handleReaderDocLoaded}
+                onDocError={(msg) => setError(msg)}
+                onPageChanged={handleReaderPageChanged}
+                onSelectionAction={handleReaderSelectionAction}
+                onScannedPage={handleReaderScannedPage}
+                onFullTextExtracted={handleFullTextExtracted}
+              />
+              <View style={styles.readerToolbar}>
+                <Text style={styles.readerToolbarHint} numberOfLines={1}>
+                  {readerPageScanned
+                    ? 'This page looks scanned — use "Read it" above.'
+                    : session.sourceFile?.name || 'Document'}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Pressable
+                    hitSlop={8}
+                    onPress={toggleSpeakReader}
+                    disabled={!readerPageText}
+                    style={styles.readerToolbarBtn}
+                  >
+                    <Ionicons
+                      name={readerSpeaking ? 'stop-circle' : 'volume-medium-outline'}
+                      size={17}
+                      color={readerSpeaking ? colors.lamp : colors.textFaint}
+                    />
+                  </Pressable>
+                  <Pressable hitSlop={8} onPress={togglePageBookmark} style={styles.readerToolbarBtn}>
+                    <Ionicons
+                      name={pageBookmarkMap.has(readerPageIndex) ? 'star' : 'star-outline'}
+                      size={17}
+                      color={pageBookmarkMap.has(readerPageIndex) ? colors.lamp : colors.textFaint}
+                    />
+                  </Pressable>
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => setWorkspaceMode(workspaceMode === 'doc' ? 'split' : 'doc')}
+                    style={styles.readerToolbarBtn}
+                    accessibilityLabel={workspaceMode === 'doc' ? 'Exit full screen' : 'Expand full screen document'}
+                  >
+                    <Ionicons
+                      name={workspaceMode === 'doc' ? 'contract-outline' : 'expand-outline'}
+                      size={17}
+                      color={colors.lamp}
+                    />
+                  </Pressable>
+                </View>
               </View>
-            </View>
-          </View>
 
-          {readerMessageList}
-          {bottomBar}
+              {/* Floating Pill when in Document Focus mode */}
+              {workspaceMode === 'doc' && (
+                <Pressable
+                  style={styles.floatingChatPill}
+                  onPress={() => setWorkspaceMode('chat')}
+                >
+                  <Ionicons name="chatbubbles" size={16} color={colors.ink} />
+                  <Text style={styles.floatingChatPillText}>
+                    AI Discussion {messages.length > 0 ? `(${messages.length})` : ''}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          )}
+
+          {(workspaceMode === 'chat' || workspaceMode === 'split') && (
+            <View
+              style={[
+                styles.chatPanel,
+                workspaceMode === 'chat' && styles.panelFull,
+                workspaceMode === 'split' && isDesktop && styles.panelDesktopSplitRight,
+                workspaceMode === 'split' && !isDesktop && styles.panelMobileSplitBottom,
+              ]}
+            >
+              {workspaceMode === 'chat' && (
+                <View style={styles.backToDocBar}>
+                  <Pressable
+                    style={styles.backToDocBtn}
+                    onPress={() => setWorkspaceMode('doc')}
+                  >
+                    <Ionicons name="arrow-back" size={15} color={colors.lamp} />
+                    <Text style={styles.backToDocText}>Back to Document (Page {readerPageIndex})</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.splitDocBtn}
+                    onPress={() => setWorkspaceMode('split')}
+                  >
+                    <Ionicons name="grid-outline" size={14} color={colors.textMuted} />
+                    <Text style={styles.splitDocText}>Split View</Text>
+                  </Pressable>
+                </View>
+              )}
+              {readerMessageList}
+              {bottomBar}
+            </View>
+          )}
         </View>
       ) : (
         <>
@@ -1305,9 +1313,7 @@ export default function SessionScreen({ route, navigation }) {
                         if (sourceMessage.type === 'image') setViewerUri(sourceMessage.content.url);
                         else if (sourceMessage.content.url) Linking.openURL(sourceMessage.content.url);
                       }}
-                      onExplain={(text, isSingleWord) => rereadSelection(text, isSingleWord, item.content)}
-                      onLoop={(text) => startLoop(text, item.content)}
-                      onSelectionChange={handleSelectionChange}
+                      onExplain={(text, isSingleWord) => handleExplainSelection(text, isSingleWord, item.content)}
                       speaking={speakingIndex === index}
                       onToggleSpeak={() => toggleSpeak(index, item.content)}
                       speakingCharIndex={speakingCharIndex}
@@ -1325,11 +1331,9 @@ export default function SessionScreen({ route, navigation }) {
                     message={item}
                     onExplain={
                       item.role === 'model' && item.type === 'text'
-                        ? (text, isSingleWord) => rereadSelection(text, isSingleWord, item.content)
+                        ? (text, isSingleWord) => handleExplainSelection(text, isSingleWord, item.content)
                         : undefined
                     }
-                    onLoop={item.role === 'model' && item.type === 'text' ? (text) => startLoop(text, item.content) : undefined}
-                    onSelectionChange={item.role === 'model' && item.type === 'text' ? handleSelectionChange : undefined}
                     onQuizComplete={handleQuizComplete}
                     speaking={speakingIndex === index}
                     onToggleSpeak={() => toggleSpeak(index, item.content)}
@@ -1347,19 +1351,7 @@ export default function SessionScreen({ route, navigation }) {
         </>
       )}
 
-      <WordExplainModal
-        popup={popup}
-        onClose={closePopup}
-        onMarkLearned={markWordLearned}
-        onResume={canResume ? resumeReading : undefined}
-      />
-      <LoopListenModal
-        loop={loop}
-        onStop={stopLoop}
-        onToggleSlow={toggleLoopSlow}
-        onExplain={explainLoopSelection}
-        onContinue={canResume ? continueAfterLoop : undefined}
-      />
+      <WordExplainModal popup={popup} onClose={() => setPopup(null)} onMarkLearned={markWordLearned} />
       <ImageViewerModal visible={!!viewerUri} uri={viewerUri} onClose={() => setViewerUri(null)} />
 
       <Modal visible={renameVisible} transparent animationType="fade" onRequestClose={() => setRenameVisible(false)}>
@@ -1464,12 +1456,102 @@ function createStyles({ colors, fonts, spacing, radius }) {
     // sizing — with a large fixed-content sibling (the WebView panel)
     // above it, an unsized FlatList would just grow to its content height
     // instead of scrolling within the remaining space.
-    readerScreen: { flex: 1 },
+    readerScreen: { flex: 1, backgroundColor: colors.ink },
+    readerScreenDesktop: { flex: 1, flexDirection: 'row' },
     readerPanel: {
+      position: 'relative',
+      backgroundColor: colors.ink,
+      display: 'flex',
+      flexDirection: 'column',
+    },
+    panelFull: {
+      flex: 1,
+      width: '100%',
+      height: '100%',
+    },
+    panelDesktopSplitLeft: {
+      flex: 3,
+      height: '100%',
+      borderRightWidth: 1,
+      borderRightColor: colors.border,
+    },
+    panelDesktopSplitRight: {
+      flex: 2,
+      height: '100%',
+      backgroundColor: colors.paper,
+    },
+    panelMobileSplitTop: {
       flex: 5,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
-      backgroundColor: colors.ink,
+    },
+    panelMobileSplitBottom: {
+      flex: 4,
+    },
+    chatPanel: {
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      backgroundColor: colors.paper,
+    },
+    floatingChatPill: {
+      position: 'absolute',
+      bottom: 24,
+      right: 20,
+      zIndex: 50,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.lamp,
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      borderRadius: radius.pill,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.35,
+      shadowRadius: 8,
+      elevation: 6,
+    },
+    floatingChatPillText: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 13,
+      color: colors.ink,
+    },
+    backToDocBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: colors.paperRaised,
+      paddingVertical: 9,
+      paddingHorizontal: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    backToDocBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    backToDocText: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 12.5,
+      color: colors.lamp,
+    },
+    splitDocBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: radius.pill,
+      backgroundColor: colors.paper,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    splitDocText: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 11,
+      color: colors.textMuted,
     },
     readerToolbar: {
       flexDirection: 'row',
@@ -1483,7 +1565,7 @@ function createStyles({ colors, fonts, spacing, radius }) {
     },
     readerToolbarHint: { flex: 1, fontFamily: fonts.body, fontSize: 11.5, color: colors.textFaint, marginRight: spacing.sm },
     readerToolbarBtn: { marginLeft: 14 },
-    readerMessageList: { flex: 4 },
+    readerMessageList: { flex: 1 },
     readerEmptyHint: {
       fontFamily: fonts.body,
       fontStyle: 'italic',
@@ -1536,9 +1618,7 @@ function createStyles({ colors, fonts, spacing, radius }) {
       paddingHorizontal: spacing.md,
       paddingBottom: 4,
     },
-    // Wraps onto a second line instead of scrolling sideways, so every
-    // action is visible without hunting for it.
-    quickActionsRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: spacing.sm, paddingBottom: spacing.xs, alignItems: 'center' },
+    quickActionsRow: { paddingHorizontal: spacing.sm, paddingBottom: spacing.xs, alignItems: 'center' },
     inputBar: {
       flexDirection: 'row',
       alignItems: 'flex-end',
@@ -1554,15 +1634,14 @@ function createStyles({ colors, fonts, spacing, radius }) {
     quizChip: {
       flexDirection: 'row',
       alignItems: 'center',
-      borderWidth: 1.5,
+      borderWidth: 1,
       borderColor: colors.lamp,
       borderRadius: radius.pill,
-      paddingVertical: 9,
-      paddingHorizontal: 14,
+      paddingVertical: 7,
+      paddingHorizontal: 10,
       marginRight: spacing.xs,
-      marginBottom: spacing.xs,
     },
-    quizChipText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.lamp, marginLeft: 6 },
+    quizChipText: { fontFamily: fonts.bodyMedium, fontSize: 11.5, color: colors.lamp, marginLeft: 4 },
     // §2: quick reading-shaped actions alongside "Quiz me" — most
     // interactions guided rather than "type anything to the bot," while
     // free text (below) stays available for anything these don't cover.
@@ -1570,15 +1649,14 @@ function createStyles({ colors, fonts, spacing, radius }) {
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: colors.paperRaised,
-      borderWidth: 1.5,
-      borderColor: colors.textFaint,
+      borderWidth: 1,
+      borderColor: colors.border,
       borderRadius: radius.pill,
-      paddingVertical: 9,
-      paddingHorizontal: 14,
+      paddingVertical: 7,
+      paddingHorizontal: 10,
       marginRight: spacing.xs,
-      marginBottom: spacing.xs,
     },
-    actionChipText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.textPrimary, marginLeft: 6 },
+    actionChipText: { fontFamily: fonts.bodyMedium, fontSize: 11.5, color: colors.textMuted, marginLeft: 4 },
     textInput: {
       flex: 1,
       backgroundColor: colors.paper,

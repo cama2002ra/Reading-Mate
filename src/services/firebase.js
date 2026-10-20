@@ -29,7 +29,7 @@
 import { Platform } from 'react-native';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { initializeAuth, getReactNativePersistence, getAuth } from 'firebase/auth';
-import { initializeFirestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Filled in with the "test-94684" Firebase project's config (from Project
@@ -83,8 +83,17 @@ if (Platform.OS === 'web') {
 // app. experimentalAutoDetectLongPolling makes the SDK fall back to
 // long-polling automatically only where streaming actually fails, instead
 // of forcing the slower transport everywhere.
-export const db = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
-});
+//
+// The try/catch guards Fast Refresh re-initialization during development,
+// falling back to getFirestore() if already started.
+export let db;
+try {
+  db = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+  });
+} catch (err) {
+  db = getFirestore(app);
+}
 
 export default app;
+

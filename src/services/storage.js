@@ -24,5 +24,5 @@ export function setApiKeyCache(key) {
 }
 
 export async function getApiKey() {
-  return cachedApiKey;
+  return cachedApiKey || process.env.EXPO_PUBLIC_GEMINI_API_KEY || null;
 }

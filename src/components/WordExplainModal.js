@@ -10,7 +10,7 @@ import Button from './Button';
 import { useTheme } from '../contexts/ThemeContext';
 
 // popup shape: { mode: 'word' | 'sentence', term, loading, definition, error } | null
-export default function WordExplainModal({ popup, onClose, onMarkLearned, onResume }) {
+export default function WordExplainModal({ popup, onClose, onMarkLearned }) {
   const theme = useTheme();
   const { colors } = theme;
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -29,7 +29,6 @@ export default function WordExplainModal({ popup, onClose, onMarkLearned, onResu
               {popup.definition && <Text style={styles.definition}>{popup.definition}</Text>}
               <View style={styles.actions}>
                 <Button title="Close" variant="ghost" onPress={onClose} />
-                {onResume && <Button title="Continue reading" onPress={onResume} />}
                 {popup.mode === 'word' && popup.definition && (
                   <Button title="Got it!" onPress={onMarkLearned} />
                 )}

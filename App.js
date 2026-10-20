@@ -30,15 +30,13 @@ const RootStack = createNativeStackNavigator();
 
 const TAB_ICONS = {
   Home: 'home-outline',
-  Read: 'book-outline',
+  Read: 'library-outline',
   Progress: 'trending-up-outline',
   Settings: 'settings-outline',
 };
 
-// The Read tab is a small stack (Milestone 2): a Sessions list, a New
-// Session input form, and the chat-style Session screen. It gets its own
-// header (back button, per-screen title) since the outer tab bar deliberately
-// has none.
+// The Read/Library tab is a stack: a Sessions/Bookshelf list, a New
+// Session input studio, and the dynamic Session reader screen.
 function ReadStackNavigator() {
   const { colors, fonts } = useTheme();
   const readStackHeaderOptions = {
@@ -50,8 +48,8 @@ function ReadStackNavigator() {
 
   return (
     <ReadStack.Navigator screenOptions={readStackHeaderOptions}>
-      <ReadStack.Screen name="SessionsList" component={SessionsListScreen} options={{ title: 'Reading sessions' }} />
-      <ReadStack.Screen name="NewSession" component={NewSessionScreen} options={{ title: 'New reading session' }} />
+      <ReadStack.Screen name="SessionsList" component={SessionsListScreen} options={{ title: 'Library' }} />
+      <ReadStack.Screen name="NewSession" component={NewSessionScreen} options={{ title: 'Start Reading' }} />
       <ReadStack.Screen name="Session" component={SessionScreen} options={{ title: 'Reading session' }} />
     </ReadStack.Navigator>
   );
@@ -82,7 +80,7 @@ function MainTabs() {
       <Tab.Screen
         name="Read"
         component={ReadStackNavigator}
-        options={{ title: 'Read' }}
+        options={{ title: 'Library' }}
         listeners={({ navigation, route }) => ({
           // P0 fix (see README): without this, the bottom-tab navigator
           // preserves whatever screen was last active inside the Read

@@ -10,6 +10,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../services/firebase';
 import { updateApiKey } from '../services/firestore';
+import { verifyApiKey } from '../services/gemini';
 import { confirmDestructive } from '../utils/confirm';
 
 const KEY_URL = 'https://aistudio.google.com/apikey';
@@ -22,6 +23,7 @@ export default function SettingsScreen() {
   const { user, geminiApiKey } = useAuth();
   const [input, setInput] = useState(geminiApiKey || '');
   const [status, setStatus] = useState(null);
+  const [testing, setTesting] = useState(false);
 
   // Keep the field in sync if the key changes from elsewhere (e.g. saved on
   // a different device) while this screen is open.
@@ -30,6 +32,8 @@ export default function SettingsScreen() {
   }, [geminiApiKey]);
 
   const hasSavedKey = !!geminiApiKey;
+  const hasEnvKey = !!process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  const aiReady = hasSavedKey || hasEnvKey;
 
   const handleSave = async () => {
     if (!input.trim()) {
@@ -38,6 +42,24 @@ export default function SettingsScreen() {
     }
     await updateApiKey(user.uid, input.trim());
     setStatus({ type: 'success', text: 'Saved to your account — synced to every device.' });
+  };
+
+  const handleTestKey = async () => {
+    const keyToTest = input.trim() || geminiApiKey || process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+    if (!keyToTest) {
+      setStatus({ type: 'error', text: 'Enter a key to test.' });
+      return;
+    }
+    setTesting(true);
+    setStatus(null);
+    try {
+      await verifyApiKey(keyToTest);
+      setStatus({ type: 'success', text: 'Connection successful! Gemini API is responding.' });
+    } catch (err) {
+      setStatus({ type: 'error', text: err?.message || 'Could not verify API key.' });
+    } finally {
+      setTesting(false);
+    }
   };
 
   const handleClear = async () => {
@@ -65,11 +87,17 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <View style={styles.row}>
           <Ionicons
-            name={hasSavedKey ? 'checkmark-circle' : 'alert-circle-outline'}
+            name={aiReady ? 'checkmark-circle' : 'alert-circle-outline'}
             size={18}
-            color={hasSavedKey ? colors.sage : colors.textMuted}
+            color={aiReady ? colors.sage : colors.textMuted}
           />
-          <Text style={styles.rowText}>{hasSavedKey ? 'AI features are on' : 'AI features are off — add a key below'}</Text>
+          <Text style={styles.rowText}>
+            {aiReady
+              ? hasSavedKey
+                ? 'AI features are on (saved key)'
+                : 'AI features are on (environment key)'
+              : 'AI features are off — add a key below'}
+          </Text>
         </View>
 
         <Text style={styles.label}>Gemini API key</Text>
@@ -88,9 +116,16 @@ export default function SettingsScreen() {
 
         <View style={styles.buttonRow}>
           <Button title="Save key" onPress={handleSave} />
+          <Button
+            title={testing ? 'Testing...' : 'Test connection'}
+            variant="ghost"
+            onPress={handleTestKey}
+            loading={testing}
+          />
           {hasSavedKey && <Button title="Remove" variant="ghost" onPress={handleClear} />}
         </View>
       </View>
+
 
       <Pressable style={styles.linkRow} onPress={() => Linking.openURL(KEY_URL)}>
         <Ionicons name="open-outline" size={16} color={colors.lamp} />

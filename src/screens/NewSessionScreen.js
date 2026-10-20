@@ -30,9 +30,7 @@ import {
   friendlyUploadErrorMessage,
   MAX_UPLOAD_BYTES,
   readPickedFileAsText,
-  readPickedFileAsBase64,
 } from '../services/uploads';
-import { extractDocxText } from '../services/docx';
 import { useAuth } from '../contexts/AuthContext';
 import { LEVELS, nextLevel } from '../constants/levels';
 
@@ -46,14 +44,11 @@ import { LEVELS, nextLevel } from '../constants/levels';
 //                     the exact same paste-text pipeline as startFromText
 //   'unsupported' -> nothing built yet can read it (e.g. .docx, .epub) —
 //                     ask the person to convert it or paste the text instead
-const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-
 function classifyPickedFile(asset) {
   const ext = (asset.name || '').split('.').pop()?.toLowerCase();
   const mimeType = asset.mimeType || '';
 
   if (mimeType === 'application/pdf' || ext === 'pdf') return 'pdf';
-  if (ext === 'docx' || mimeType === DOCX_MIME) return 'docx';
   if (mimeType.startsWith('text/') || ['txt', 'md', 'markdown'].includes(ext)) return 'text';
   return 'unsupported';
 }
@@ -69,13 +64,14 @@ function titleFromFileName(name) {
   return cleaned || 'Reading session';
 }
 
-export default function NewSessionScreen({ navigation }) {
+export default function NewSessionScreen({ route, navigation }) {
   const theme = useTheme();
   const { colors, spacing } = theme;
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { user } = useAuth();
   const [level, setLevel] = useState(LEVELS[1].key);
+  const [activeTab, setActiveTab] = useState(route?.params?.initialMode || 'pdf'); // 'pdf' | 'text' | 'photo'
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null); // 0-1, or null when not uploading
@@ -87,6 +83,12 @@ export default function NewSessionScreen({ navigation }) {
   // header comment for why a photo shouldn't commit straight to the
   // simplify default the instant it's picked. { asset, mimeType } | null.
   const [pendingPhoto, setPendingPhoto] = useState(null);
+
+  useEffect(() => {
+    if (route?.params?.initialMode) {
+      setActiveTab(route.params.initialMode);
+    }
+  }, [route?.params?.initialMode]);
 
   // Adaptive level suggestion: if the last 3 quiz scores at the current
   // level average above 80%, nudge toward the next level up.
@@ -235,7 +237,7 @@ export default function NewSessionScreen({ navigation }) {
     let result;
     try {
       result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', DOCX_MIME, 'text/plain', 'text/markdown', 'text/*'],
+        type: ['application/pdf', 'text/plain', 'text/markdown', 'text/*'],
         copyToCacheDirectory: true,
       });
     } catch (err) {
@@ -250,7 +252,7 @@ export default function NewSessionScreen({ navigation }) {
     const kind = classifyPickedFile(asset);
     if (kind === 'unsupported') {
       const ext = (asset.name || 'that file').split('.').pop();
-      setError(`Reading Mate can't read .${ext} files yet — try a PDF, a Word (.docx) file, a .txt file, or paste the text instead.`);
+      setError(`Reading Mate can't read .${ext} files yet — try a PDF, a .txt file, or paste the text instead.`);
       return;
     }
     if ((asset.size ?? 0) > MAX_UPLOAD_BYTES) {
@@ -320,13 +322,9 @@ export default function NewSessionScreen({ navigation }) {
         // plain text, so the app reads it itself and feeds it through the
         // exact same pipeline as pasted text (no Storage upload at all —
         // there are no meaningful bytes here beyond the string itself).
-        const passage = (
-          kind === 'docx'
-            ? await extractDocxText(await readPickedFileAsBase64(asset.uri))
-            : await readPickedFileAsText(asset.uri)
-        ).trim();
+        const passage = (await readPickedFileAsText(asset.uri)).trim();
         if (!passage) {
-          setError('That file looks empty (or has no readable text).');
+          setError('That file looks empty.');
           setLoading(false);
           return;
         }
@@ -354,9 +352,12 @@ export default function NewSessionScreen({ navigation }) {
 
   return (
     <ScreenContainer>
-      <Text style={styles.heading}>New reading session</Text>
-      <Text style={styles.subheading}>Paste text, upload a file, or snap a page — Reading Mate does the rest.</Text>
+      <Text style={styles.heading}>Start a Reading</Text>
+      <Text style={styles.subheading}>
+        Choose your material below — Reading Mate tailors everything to your level.
+      </Text>
 
+      {/* Target Reading Level Row */}
       <View style={styles.levelRow}>
         {LEVELS.map((l) => (
           <Pressable
@@ -387,40 +388,137 @@ export default function NewSessionScreen({ navigation }) {
         </View>
       )}
 
-      <TextInput
-        value={inputText}
-        onChangeText={setInputText}
-        placeholder="Paste a paragraph, an article, homework text…"
-        placeholderTextColor={colors.textFaint}
-        multiline
-        style={styles.input}
-        editable={!loading}
-      />
+      {/* Studio Segmented Tabs */}
+      <View style={styles.studioTabs}>
+        <Pressable
+          style={[styles.studioTab, activeTab === 'pdf' && styles.studioTabActive]}
+          onPress={() => setActiveTab('pdf')}
+        >
+          <Ionicons
+            name="document-text-outline"
+            size={16}
+            color={activeTab === 'pdf' ? colors.ink : colors.textMuted}
+            style={{ marginRight: 6 }}
+          />
+          <Text style={[styles.studioTabText, activeTab === 'pdf' && styles.studioTabTextActive]}>
+            Document / PDF
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.studioTab, activeTab === 'text' && styles.studioTabActive]}
+          onPress={() => setActiveTab('text')}
+        >
+          <Ionicons
+            name="create-outline"
+            size={16}
+            color={activeTab === 'text' ? colors.ink : colors.textMuted}
+            style={{ marginRight: 6 }}
+          />
+          <Text style={[styles.studioTabText, activeTab === 'text' && styles.studioTabTextActive]}>
+            Paste Text
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.studioTab, activeTab === 'photo' && styles.studioTabActive]}
+          onPress={() => setActiveTab('photo')}
+        >
+          <Ionicons
+            name="camera-outline"
+            size={16}
+            color={activeTab === 'photo' ? colors.ink : colors.textMuted}
+            style={{ marginRight: 6 }}
+          />
+          <Text style={[styles.studioTabText, activeTab === 'photo' && styles.studioTabTextActive]}>
+            Photo / Scan
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* Tab 1: PDF Document */}
+      {activeTab === 'pdf' && (
+        <View style={styles.studioPanel}>
+          <View style={styles.uploadBox}>
+            <View style={styles.uploadIconWrap}>
+              <Ionicons name="cloud-upload-outline" size={38} color={colors.lamp} />
+            </View>
+            <Text style={styles.uploadTitle}>Open an Interactive Document</Text>
+            <Text style={styles.uploadDesc}>
+              Upload textbooks, research articles, or lecture slides (PDF up to 15 MB).
+              Opens in the interactive reader with instant on-page definitions, AI explanations & page quizzes.
+            </Text>
+            <View style={{ width: '100%', marginTop: spacing.md }}>
+              <Button
+                title="Choose PDF Document"
+                onPress={startFromFile}
+                loading={loading}
+              />
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Tab 2: Paste Text */}
+      {activeTab === 'text' && (
+        <View style={styles.studioPanel}>
+          <TextInput
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Paste an article, chapter, homework assignment, or challenging text…"
+            placeholderTextColor={colors.textFaint}
+            multiline
+            style={styles.input}
+            editable={!loading}
+          />
+          <View style={styles.textMetaRow}>
+            <Text style={styles.textCharCount}>
+              {inputText.length > 0 ? `${inputText.length} characters` : 'Ready to simplify'}
+            </Text>
+          </View>
+          <Button title="Simplify & Start Reading" onPress={startFromText} loading={loading} />
+        </View>
+      )}
+
+      {/* Tab 3: Photo / Scan */}
+      {activeTab === 'photo' && (
+        <View style={styles.studioPanel}>
+          <View style={styles.photoOptionsGrid}>
+            <Pressable
+              style={styles.photoOptionCard}
+              onPress={() => startFromImage(true)}
+              disabled={loading}
+            >
+              <View style={[styles.photoOptionIcon, { backgroundColor: colors.coralSoft }]}>
+                <Ionicons name="camera" size={26} color={colors.coral} />
+              </View>
+              <Text style={styles.photoOptionTitle}>Take Photo</Text>
+              <Text style={styles.photoOptionDesc}>Snap a page from a physical book, worksheet, or handout</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.photoOptionCard}
+              onPress={() => startFromImage(false)}
+              disabled={loading}
+            >
+              <View style={[styles.photoOptionIcon, { backgroundColor: colors.lampSoft }]}>
+                <Ionicons name="images" size={26} color={colors.lamp} />
+              </View>
+              <Text style={styles.photoOptionTitle}>Photo Library</Text>
+              <Text style={styles.photoOptionDesc}>Pick an existing image of text from your device photo gallery</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {error && <Text style={styles.error}>{error}</Text>}
 
-      <Button title="Start reading" onPress={startFromText} loading={loading} />
-
-      <View style={styles.photoRow}>
-        <Pressable style={styles.photoLink} onPress={() => startFromImage(true)} disabled={loading}>
-          <Ionicons name="camera-outline" size={16} color={colors.textMuted} />
-          <Text style={styles.photoLinkText}>Snap a page</Text>
-        </Pressable>
-        <Pressable style={styles.photoLink} onPress={() => startFromImage(false)} disabled={loading}>
-          <Ionicons name="image-outline" size={16} color={colors.textMuted} />
-          <Text style={styles.photoLinkText}>Choose photo</Text>
-        </Pressable>
-        <Pressable style={styles.photoLink} onPress={startFromFile} disabled={loading}>
-          <Ionicons name="document-attach-outline" size={16} color={colors.textMuted} />
-          <Text style={styles.photoLinkText}>Choose file</Text>
-        </Pressable>
-      </View>
       {loading && (
-        <View style={{ alignItems: 'center', marginTop: spacing.sm }}>
+        <View style={{ alignItems: 'center', marginTop: spacing.md }}>
           <ActivityIndicator color={colors.lamp} />
           {uploadProgress !== null && (
             <Text style={styles.uploadProgressText}>
-              {uploadProgress > 0 ? `Uploading… ${Math.round(uploadProgress * 100)}%` : 'Uploading…'}
+              {uploadProgress > 0 ? `Uploading… ${Math.round(uploadProgress * 100)}%` : 'Uploading document…'}
             </Text>
           )}
         </View>
@@ -439,23 +537,23 @@ export default function NewSessionScreen({ navigation }) {
   );
 }
 
-function createStyles({ colors, fonts, spacing, radius }) {
+function createStyles({ colors, fonts, spacing, radius, shadow }) {
   return StyleSheet.create({
     heading: { fontFamily: fonts.displayBold, fontSize: 24, color: colors.textPrimary },
     subheading: { fontFamily: fonts.body, fontSize: 13.5, color: colors.textMuted, marginTop: 4, marginBottom: spacing.md },
 
-    levelRow: { flexDirection: 'row', marginBottom: spacing.md },
+    levelRow: { flexDirection: 'row', marginBottom: spacing.md, flexWrap: 'wrap', gap: 6 },
     chip: {
       paddingVertical: 7,
       paddingHorizontal: 14,
       borderRadius: radius.pill,
       borderWidth: 1,
       borderColor: colors.border,
-      marginRight: spacing.sm,
+      backgroundColor: colors.paper,
     },
     chipActive: { backgroundColor: colors.lampSoft, borderColor: colors.lamp },
     chipText: { fontFamily: fonts.bodyMedium, fontSize: 12.5, color: colors.textMuted },
-    chipTextActive: { color: colors.lamp },
+    chipTextActive: { color: colors.lamp, fontFamily: fonts.bodySemiBold },
 
     suggestionChip: {
       flexDirection: 'row',
@@ -471,8 +569,81 @@ function createStyles({ colors, fonts, spacing, radius }) {
     suggestionTextWrap: { flex: 1 },
     suggestionText: { fontFamily: fonts.bodyMedium, fontSize: 12.5, color: colors.sage, marginLeft: 6, marginRight: 6 },
 
+    // Studio Tabs
+    studioTabs: {
+      flexDirection: 'row',
+      backgroundColor: colors.paperRaised,
+      borderRadius: radius.pill,
+      padding: 3,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginBottom: spacing.md,
+    },
+    studioTab: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 8,
+      borderRadius: radius.pill,
+    },
+    studioTabActive: {
+      backgroundColor: colors.lamp,
+    },
+    studioTabText: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 12.5,
+      color: colors.textMuted,
+    },
+    studioTabTextActive: {
+      fontFamily: fonts.bodySemiBold,
+      color: colors.ink,
+    },
+
+    studioPanel: {
+      marginBottom: spacing.md,
+    },
+
+    // PDF Upload Box
+    uploadBox: {
+      backgroundColor: colors.paper,
+      borderRadius: radius.lg,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      borderStyle: 'dashed',
+      padding: spacing.xl,
+      alignItems: 'center',
+      textAlign: 'center',
+    },
+    uploadIconWrap: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: colors.lampSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing.md,
+    },
+    uploadTitle: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 16,
+      color: colors.textPrimary,
+      marginBottom: 6,
+      textAlign: 'center',
+    },
+    uploadDesc: {
+      fontFamily: fonts.body,
+      fontSize: 13,
+      color: colors.textMuted,
+      lineHeight: 18,
+      textAlign: 'center',
+      marginBottom: spacing.md,
+      maxWidth: 420,
+    },
+
+    // Text Input Panel
     input: {
-      minHeight: 110,
+      minHeight: 130,
       backgroundColor: colors.paper,
       borderRadius: radius.md,
       borderWidth: 1,
@@ -482,13 +653,57 @@ function createStyles({ colors, fonts, spacing, radius }) {
       fontFamily: fonts.body,
       fontSize: 14.5,
       textAlignVertical: 'top',
+      marginBottom: spacing.xs,
+    },
+    textMetaRow: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
       marginBottom: spacing.md,
     },
-    error: { fontFamily: fonts.body, color: colors.coral, fontSize: 13, marginBottom: spacing.sm },
+    textCharCount: {
+      fontFamily: fonts.body,
+      fontSize: 11.5,
+      color: colors.textFaint,
+    },
 
-    photoRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: spacing.md },
-    photoLink: { flexDirection: 'row', alignItems: 'center', marginHorizontal: spacing.md, marginBottom: spacing.xs },
-    photoLinkText: { fontFamily: fonts.bodyMedium, color: colors.textMuted, fontSize: 13, marginLeft: 5 },
+    // Photo Options Grid
+    photoOptionsGrid: {
+      flexDirection: 'row',
+      gap: spacing.md,
+    },
+    photoOptionCard: {
+      flex: 1,
+      backgroundColor: colors.paper,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.lg,
+      alignItems: 'center',
+    },
+    photoOptionIcon: {
+      width: 52,
+      height: 52,
+      borderRadius: radius.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing.sm,
+    },
+    photoOptionTitle: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 15,
+      color: colors.textPrimary,
+      marginBottom: 4,
+      textAlign: 'center',
+    },
+    photoOptionDesc: {
+      fontFamily: fonts.body,
+      fontSize: 12,
+      color: colors.textMuted,
+      textAlign: 'center',
+      lineHeight: 16,
+    },
+
+    error: { fontFamily: fonts.body, color: colors.coral, fontSize: 13, marginTop: spacing.xs, marginBottom: spacing.sm },
     uploadProgressText: { fontFamily: fonts.body, fontSize: 12, color: colors.textMuted, marginTop: 6 },
   });
 }

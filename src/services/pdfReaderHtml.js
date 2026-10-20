@@ -28,6 +28,7 @@
 
 const PDFJS_VERSION = '6.1.200';
 const PDFJS_MODULE_URL = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.mjs`;
+const PDFJS_WORKER_URL = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.mjs`;
 
 // Escapes a URL for safe embedding inside a single-quoted JS string literal
 // in the generated HTML — download URLs can contain '&' and query params
@@ -81,6 +82,7 @@ export function buildPdfReaderHtml({ fileUrl, colors }) {
   .textLayer span {
     position: absolute; white-space: pre; color: transparent;
     transform-origin: 0% 0%; cursor: text;
+    user-select: text; -webkit-user-select: text;
   }
   .textLayer span::selection { background: ${colors.lampSoft}; color: transparent; }
   .textLayer span.reading-highlight {
@@ -141,6 +143,8 @@ export function buildPdfReaderHtml({ fileUrl, colors }) {
 <script type="module">
   import * as pdfjsLib from ${jsStringLiteral(PDFJS_MODULE_URL)};
 
+  pdfjsLib.GlobalWorkerOptions.workerSrc = ${jsStringLiteral(PDFJS_WORKER_URL)};
+
   var FILE_URL = ${fileUrlLiteral};
 
   var state = {
@@ -151,12 +155,27 @@ export function buildPdfReaderHtml({ fileUrl, colors }) {
     baseScale: 1.2,
     cache: {},          // pageNumber -> { textItems, offsets, pageText, isScanned }
     selectionPageIndex: null,
+    currentSelectionText: '',
   };
 
   function post(msg) {
+    var payload = JSON.stringify(msg);
     if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-      window.ReactNativeWebView.postMessage(JSON.stringify(msg));
+      window.ReactNativeWebView.postMessage(payload);
     }
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(payload, '*');
+    }
+  }
+
+  if (!window.ReactNativeWebView) {
+    window.ReactNativeWebView = {
+      postMessage: function (msg) {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(msg, '*');
+        }
+      }
+    };
   }
 
   function byId(id) { return document.getElementById(id); }
@@ -348,8 +367,7 @@ export function buildPdfReaderHtml({ fileUrl, colors }) {
     row.innerHTML = '';
     var actions = [];
     if (isSingleWord) actions.push({ key: 'define', label: 'Define' });
-    actions.push({ key: 'explain', label: 'Re-read for me' });
-    actions.push({ key: 'loop', label: 'Listen on loop' });
+    actions.push({ key: 'explain', label: 'Explain' });
     actions.push({ key: 'simplify', label: 'Simplify' });
     actions.push({ key: 'quiz', label: 'Quiz me' });
     actions.push({ key: 'custom', label: 'Custom…' });
@@ -358,6 +376,10 @@ export function buildPdfReaderHtml({ fileUrl, colors }) {
       var btn = document.createElement('button');
       btn.textContent = a.label;
       if (i === 0) btn.className = 'primary';
+      btn.addEventListener('mousedown', function (ev) {
+        // Prevent clicking the button from losing the text selection in desktop browsers
+        ev.preventDefault();
+      });
       btn.addEventListener('click', function (ev) {
         ev.stopPropagation();
         handleActionTap(a.key);
@@ -368,7 +390,7 @@ export function buildPdfReaderHtml({ fileUrl, colors }) {
 
   function handleActionTap(action) {
     var sel = window.getSelection();
-    var text = (sel ? sel.toString() : '').trim();
+    var text = (sel ? sel.toString() : '').trim() || state.currentSelectionText || '';
     if (!text) { hideToolbar(); return; }
     var pageIndex = state.selectionPageIndex || state.currentPage;
     var pageRecord = state.cache[pageIndex];
@@ -380,6 +402,7 @@ export function buildPdfReaderHtml({ fileUrl, colors }) {
       pageContext: pageRecord ? pageRecord.pageText : '',
     });
     if (sel) sel.removeAllRanges();
+    state.currentSelectionText = '';
     hideToolbar();
   }
 
@@ -396,7 +419,8 @@ export function buildPdfReaderHtml({ fileUrl, colors }) {
       if (!rect || (rect.width === 0 && rect.height === 0)) { hideToolbar(); return; }
 
       state.selectionPageIndex = pageIndexForNode(sel.anchorNode);
-      var isSingleWord = !/\\s/.test(text);
+      state.currentSelectionText = text;
+      var isSingleWord = !/\s/.test(text);
       buildToolbarButtons(isSingleWord);
 
       var toolbar = byId('actionToolbar');
@@ -410,11 +434,13 @@ export function buildPdfReaderHtml({ fileUrl, colors }) {
     }, 120);
   });
 
-  byId('docArea').addEventListener('touchstart', function (e) {
+  function handleDocPointerDown(e) {
     if (e.target && e.target.closest && e.target.closest('#actionToolbar')) return;
     if (e.target && e.target.tagName === 'SPAN') return;
     hideToolbar();
-  }, { passive: true });
+  }
+  byId('docArea').addEventListener('touchstart', handleDocPointerDown, { passive: true });
+  byId('docArea').addEventListener('mousedown', handleDocPointerDown);
 
   // ---------- Read-aloud highlight bridge (§4.5) — called from RN via ----------
   // ---------- injectJavaScript on each expo-speech onBoundary event ----------
@@ -496,7 +522,12 @@ export function buildPdfReaderHtml({ fileUrl, colors }) {
     post({ type: 'doc-error', message: 'Timed out opening the document.' });
   }, OPEN_TIMEOUT_MS);
 
-  pdfjsLib.getDocument({ url: FILE_URL, disableWorker: true }).promise
+  pdfjsLib.getDocument({
+    url: FILE_URL,
+    cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + ${jsStringLiteral(PDFJS_VERSION)} + '/cmaps/',
+    cMapPacked: true,
+    standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + ${jsStringLiteral(PDFJS_VERSION)} + '/standard_fonts/',
+  }).promise
     .then(function (pdf) {
       if (openSettled) return; // the timeout already took over the UI
       openSettled = true;
