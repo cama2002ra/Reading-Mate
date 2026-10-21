@@ -1,17 +1,25 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, Animated, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 import ScreenContainer from '../components/ScreenContainer';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToSessions, createSession, newSessionId, updateSessionTitle } from '../services/firestore';
+import {
+  subscribeToSessions,
+  createSession,
+  newSessionId,
+  updateSessionTitle,
+  subscribeToProgress,
+  recordWordLearned,
+} from '../services/firestore';
 import { levelLabel } from '../constants/levels';
 
 function getTimeGreeting() {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (hour < 12) return { text: 'Good morning', icon: 'sunny-outline', color: '#E8A33D' };
+  if (hour < 18) return { text: 'Good afternoon', icon: 'partly-sunny-outline', color: '#E8A33D' };
+  return { text: 'Good evening', icon: 'moon-outline', color: '#6FCF97' };
 }
 
 function formatDate(timestamp) {
@@ -35,22 +43,118 @@ function passageExcerpt(session) {
   return 'Ready to read';
 }
 
+const WORD_OF_THE_DAY_LIST = [
+  {
+    word: 'Resilience',
+    phonetic: '/rɪˈzɪl.jəns/',
+    definition: 'The ability to bounce back, recover, and grow stronger after facing difficult challenges or setbacks.',
+    example: 'Her resilience helped her sound out every difficult paragraph and master the text.',
+  },
+  {
+    word: 'Curiosity',
+    phonetic: '/ˌkjʊə.riˈɒs.ə.ti/',
+    definition: 'A strong, eager desire to learn, understand, and explore new ideas or information.',
+    example: 'His curiosity sparked when he discovered a fascinating science chapter in the library.',
+  },
+  {
+    word: 'Perspective',
+    phonetic: '/pəˈspek.tɪv/',
+    definition: 'A particular attitude toward or way of regarding and understanding something.',
+    example: 'Reading stories from different cultures gave her a whole new perspective on the world.',
+  },
+  {
+    word: 'Luminous',
+    phonetic: '/ˈluː.mɪ.nəs/',
+    definition: 'Full of or shedding light; bright, inspiring, or brilliantly clear to understand.',
+    example: 'The author wrote with a luminous clarity that made difficult concepts easy to grasp.',
+  },
+  {
+    word: 'Tenacious',
+    phonetic: '/təˈneɪ.ʃəs/',
+    definition: 'Holding firm to a purpose; persistent and determined to keep going.',
+    example: 'The tenacious reader sounded out every new word until the meaning became clear.',
+  },
+  {
+    word: 'Eloquent',
+    phonetic: '/ˈel.ə.kwənt/',
+    definition: 'Fluent, persuasive, and beautifully expressive in speech or writing.',
+    example: 'The author delivered an eloquent explanation that captivated every reader.',
+  },
+  {
+    word: 'Empathy',
+    phonetic: '/ˈem.pə.θi/',
+    definition: 'The ability to understand and share the feelings and experiences of another person.',
+    example: 'Good books cultivate empathy by letting us walk in other people’s shoes.',
+  },
+];
+
+const READING_TIPS = [
+  { icon: 'bulb-outline', text: 'Tap any word while reading to get an instant definition and pronunciation.' },
+  { icon: 'bookmark-outline', text: 'Bookmark your favourite passages and revisit them from the Progress tab.' },
+  { icon: 'repeat-outline', text: 'Words you save come back as flashcards — spaced repetition keeps them sharp.' },
+  { icon: 'sparkles-outline', text: 'Use "Quiz me" after reading a passage to test your comprehension.' },
+  { icon: 'camera-outline', text: 'Snap a photo of a textbook page and Reading Mate will simplify it for you.' },
+  { icon: 'document-text-outline', text: 'Upload a PDF and get AI-powered explanations, definitions, and quizzes inline.' },
+];
+
 export default function HomeScreen({ navigation }) {
   const theme = useTheme();
   const { colors, fonts, spacing, radius } = theme;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { user } = useAuth();
   const [sessions, setSessions] = useState(null);
+  const [progress, setProgress] = useState(null);
   const [demoLoading, setDemoLoading] = useState(false);
+  const [speakingWord, setSpeakingWord] = useState(false);
+  const [wordSaved, setWordSaved] = useState(false);
+  const [wordExpanded, setWordExpanded] = useState(false);
+
+  // Entrance animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(18)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 500, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 500, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  }, []);
 
   useEffect(() => {
     if (!user) return undefined;
-    const unsubscribe = subscribeToSessions(user.uid, (list) => setSessions(list || []));
-    return unsubscribe;
+    const unsubscribeSessions = subscribeToSessions(user.uid, (list) => setSessions(list || []));
+    const unsubscribeProgress = subscribeToProgress(user.uid, setProgress);
+    return () => {
+      unsubscribeSessions();
+      unsubscribeProgress();
+    };
   }, [user]);
 
   const recentSession = sessions && sessions.length > 0 ? sessions[0] : null;
   const greeting = getTimeGreeting();
+
+  // Pick deterministic word based on calendar day
+  const dayIndex = Math.floor(Date.now() / (24 * 60 * 60 * 1000)) % WORD_OF_THE_DAY_LIST.length;
+  const todayWord = WORD_OF_THE_DAY_LIST[dayIndex];
+
+  const handleSpeakWord = () => {
+    if (speakingWord || !todayWord) return;
+    setSpeakingWord(true);
+    Speech.speak(todayWord.word, {
+      rate: 0.85,
+      onDone: () => setSpeakingWord(false),
+      onError: () => setSpeakingWord(false),
+    });
+  };
+
+  const handleSaveDailyWord = async () => {
+    if (!user || wordSaved || !todayWord) return;
+    try {
+      await recordWordLearned(user.uid, todayWord.word, todayWord.definition);
+      setWordSaved(true);
+    } catch (e) {
+      console.warn('[handleSaveDailyWord] error:', e);
+    }
+  };
 
   const handleLaunchSamplePdf = async () => {
     if (!user || demoLoading) return;
@@ -85,11 +189,14 @@ export default function HomeScreen({ navigation }) {
       {/* Welcome Header */}
       <View style={styles.header}>
         <View style={styles.greetingWrap}>
-          <Text style={styles.greetingTitle}>
-            {greeting}, {user?.displayName ? user.displayName.split(' ')[0] : 'Reader'}
-          </Text>
+          <View style={styles.greetingTitleRow}>
+            <Ionicons name={greeting.icon} size={20} color={greeting.color} style={{ marginRight: 6 }} />
+            <Text style={styles.greetingTitle}>
+              {greeting.text}, {user?.displayName ? user.displayName.split(' ')[0] : 'Reader'}
+            </Text>
+          </View>
           <Text style={styles.greetingSubtitle}>
-            What would you like to read today?
+            What would you like to explore today?
           </Text>
         </View>
         <Pressable
@@ -99,6 +206,82 @@ export default function HomeScreen({ navigation }) {
         >
           <Ionicons name="sparkles" size={15} color={colors.lamp} />
           <Text style={styles.settingsBadgeText}>Reading Mate</Text>
+        </Pressable>
+      </View>
+
+      {/* Quick Habit Stats Bar */}
+      <View style={styles.quickStatsRow}>
+        <View style={styles.statPill}>
+          <Ionicons name="flame" size={16} color={colors.lamp} />
+          <Text style={styles.statPillNum}>{progress?.streak || 0}</Text>
+          <Text style={styles.statPillLabel}>day streak</Text>
+        </View>
+        <View style={styles.statPill}>
+          <Ionicons name="book" size={16} color={colors.sage} />
+          <Text style={styles.statPillNum}>{progress?.passagesRead || 0}</Text>
+          <Text style={styles.statPillLabel}>read</Text>
+        </View>
+        <View style={styles.statPill}>
+          <Ionicons name="school" size={16} color={colors.textPrimary} />
+          <Text style={styles.statPillNum}>{progress?.wordsLearned?.length || 0}</Text>
+          <Text style={styles.statPillLabel}>vocab</Text>
+        </View>
+      </View>
+
+      {/* Word of the Day */}
+      <View style={styles.section}>
+        <Pressable
+          style={styles.wordCard}
+          onPress={() => setWordExpanded((v) => !v)}
+        >
+          <View style={styles.wordCardHeader}>
+            <View style={styles.wordCardBadge}>
+              <Ionicons name="sparkles" size={13} color={colors.lamp} />
+              <Text style={styles.wordCardBadgeText}>Word of the Day</Text>
+            </View>
+            <Ionicons
+              name={wordExpanded ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={colors.textFaint}
+            />
+          </View>
+          <View style={styles.wordCardBody}>
+            <Text style={styles.wordCardWord}>{todayWord.word}</Text>
+            <Text style={styles.wordCardPhonetic}>{todayWord.phonetic}</Text>
+          </View>
+          {wordExpanded && (
+            <View style={styles.wordCardExpanded}>
+              <Text style={styles.wordCardDefinition}>{todayWord.definition}</Text>
+              <View style={styles.wordCardExampleBox}>
+                <Ionicons name="chatbubble-outline" size={13} color={colors.textFaint} style={{ marginTop: 1 }} />
+                <Text style={styles.wordCardExample}>"{todayWord.example}"</Text>
+              </View>
+              <View style={styles.wordCardActions}>
+                <Pressable style={styles.wordCardSpeakBtn} onPress={handleSpeakWord}>
+                  <Ionicons
+                    name={speakingWord ? 'volume-high' : 'volume-medium-outline'}
+                    size={16}
+                    color={colors.lamp}
+                  />
+                  <Text style={styles.wordCardSpeakText}>{speakingWord ? 'Playing…' : 'Pronounce'}</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.wordCardSaveBtn, wordSaved && styles.wordCardSaveBtnDone]}
+                  onPress={handleSaveDailyWord}
+                  disabled={wordSaved}
+                >
+                  <Ionicons
+                    name={wordSaved ? 'checkmark-circle' : 'add-circle-outline'}
+                    size={15}
+                    color={wordSaved ? colors.sage : colors.lamp}
+                  />
+                  <Text style={[styles.wordCardSaveText, wordSaved && { color: colors.sage }]}>
+                    {wordSaved ? 'Saved!' : 'Save to Vocab'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
         </Pressable>
       </View>
 
@@ -316,6 +499,17 @@ export default function HomeScreen({ navigation }) {
           ))}
         </View>
       )}
+
+      {/* Reading Tip */}
+      <View style={styles.section}>
+        <View style={styles.tipCard}>
+          <Ionicons name={READING_TIPS[dayIndex % READING_TIPS.length].icon} size={18} color={colors.sage} style={{ marginTop: 1 }} />
+          <View style={styles.tipBody}>
+            <Text style={styles.tipLabel}>Reading Tip</Text>
+            <Text style={styles.tipText}>{READING_TIPS[dayIndex % READING_TIPS.length].text}</Text>
+          </View>
+        </View>
+      </View>
     </ScreenContainer>
   );
 }
@@ -330,6 +524,11 @@ function createStyles({ colors, fonts, spacing, radius, shadow }) {
       marginTop: spacing.sm,
     },
     greetingWrap: { flex: 1, marginRight: spacing.sm },
+    greetingTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 2,
+    },
     greetingTitle: {
       fontFamily: fonts.displayBold,
       fontSize: 26,
@@ -374,6 +573,34 @@ function createStyles({ colors, fonts, spacing, radius, shadow }) {
       alignItems: 'center',
       justifyContent: 'space-between',
       marginBottom: spacing.sm,
+    },
+    quickStatsRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: spacing.lg,
+    },
+    statPill: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.paper,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingVertical: 10,
+      marginHorizontal: 3,
+      gap: 5,
+    },
+    statPillNum: {
+      fontFamily: fonts.bodyBold,
+      fontSize: 15,
+      color: colors.textPrimary,
+    },
+    statPillLabel: {
+      fontFamily: fonts.body,
+      fontSize: 11,
+      color: colors.textMuted,
     },
     viewAllText: {
       fontFamily: fonts.bodySemiBold,
@@ -595,5 +822,148 @@ function createStyles({ colors, fonts, spacing, radius, shadow }) {
     tagTextLabel: { fontFamily: fonts.bodySemiBold, fontSize: 10 },
     tagTextPdf: { color: colors.lamp },
     tagTextPassage: { color: colors.sage },
+
+    // Word of the Day
+    wordCard: {
+      backgroundColor: colors.paper,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.md,
+      ...shadow,
+    },
+    wordCardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.xs,
+    },
+    wordCardBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+    },
+    wordCardBadgeText: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 11,
+      color: colors.lamp,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    wordCardBody: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: 10,
+      marginBottom: 4,
+    },
+    wordCardWord: {
+      fontFamily: fonts.displayBold,
+      fontSize: 24,
+      color: colors.textPrimary,
+    },
+    wordCardPhonetic: {
+      fontFamily: fonts.body,
+      fontSize: 13,
+      color: colors.textFaint,
+      fontStyle: 'italic',
+    },
+    wordCardExpanded: {
+      marginTop: spacing.sm,
+      paddingTop: spacing.sm,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    wordCardDefinition: {
+      fontFamily: fonts.body,
+      fontSize: 14,
+      color: colors.textPrimary,
+      lineHeight: 21,
+      marginBottom: spacing.sm,
+    },
+    wordCardExampleBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 7,
+      backgroundColor: colors.paperRaised,
+      borderRadius: radius.sm,
+      padding: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    wordCardExample: {
+      flex: 1,
+      fontFamily: fonts.displayRegular,
+      fontSize: 13,
+      color: colors.textMuted,
+      fontStyle: 'italic',
+      lineHeight: 19,
+    },
+    wordCardActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    wordCardSpeakBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      backgroundColor: colors.lampSoft,
+      paddingVertical: 7,
+      paddingHorizontal: 12,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.lamp,
+    },
+    wordCardSpeakText: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 12,
+      color: colors.lamp,
+    },
+    wordCardSaveBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      backgroundColor: colors.paperRaised,
+      paddingVertical: 7,
+      paddingHorizontal: 12,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    wordCardSaveBtnDone: {
+      borderColor: colors.sage,
+      backgroundColor: colors.sageSoft,
+    },
+    wordCardSaveText: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 12,
+      color: colors.lamp,
+    },
+
+    // Reading tip
+    tipCard: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      backgroundColor: colors.sageSoft,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.sage,
+      padding: spacing.md,
+      gap: spacing.sm,
+    },
+    tipBody: { flex: 1 },
+    tipLabel: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 11,
+      color: colors.sage,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      marginBottom: 3,
+    },
+    tipText: {
+      fontFamily: fonts.body,
+      fontSize: 13,
+      color: colors.textPrimary,
+      lineHeight: 18,
+    },
   });
 }

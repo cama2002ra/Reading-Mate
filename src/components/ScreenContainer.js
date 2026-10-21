@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, ScrollView, KeyboardAvoidingView, Platform, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../contexts/ThemeContext';
 
-export default function ScreenContainer({ children, scroll = true }) {
+export default function ScreenContainer({ children, scroll = true, wide = false }) {
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -18,7 +18,9 @@ export default function ScreenContainer({ children, scroll = true }) {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <Wrapper {...wrapperProps}>{children}</Wrapper>
+        <Wrapper {...wrapperProps}>
+          <View style={wide ? styles.contentWide : styles.content}>{children}</View>
+        </Wrapper>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -36,6 +38,16 @@ function createStyles({ colors, spacing }) {
     scrollContent: {
       padding: spacing.lg,
       paddingBottom: spacing.xxl,
+    },
+    content: {
+      width: '100%',
+      maxWidth: 720,
+      alignSelf: 'center',
+    },
+    contentWide: {
+      width: '100%',
+      maxWidth: 960,
+      alignSelf: 'center',
     },
   });
 }

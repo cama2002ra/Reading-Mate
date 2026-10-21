@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, TextInput, StyleSheet, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, TextInput, StyleSheet, Pressable, KeyboardAvoidingView, Platform, Animated, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
@@ -42,6 +42,26 @@ export default function AuthScreen() {
 
   const isSignUp = mode === 'signup';
 
+  // Entrance animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const glowAnim = useRef(new Animated.Value(0.7)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+
+    // Subtle pulsing glow on the icon badge
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(glowAnim, { toValue: 0.7, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
   const handleSubmit = async () => {
     if (!email.trim() || !password) {
       setError('Enter an email and password.');
@@ -83,51 +103,57 @@ export default function AuthScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.content}>
-          <View style={styles.lampBadge}>
+        <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          {/* Decorative glowing orb */}
+          <Animated.View style={[styles.glowOrb, { opacity: glowAnim }]} />
+
+          <Animated.View style={[styles.lampBadge, { opacity: glowAnim }]}>
             <Ionicons name="book" size={30} color={colors.ink} />
-          </View>
+          </Animated.View>
           <Text style={styles.title}>Reading Mate</Text>
+          <Text style={styles.tagline}>AI-powered reading comprehension</Text>
           <Text style={styles.subtitle}>
             {isSignUp
               ? 'Create an account to sync your reading across devices.'
               : 'Sign in to pick up where you left off.'}
           </Text>
 
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Email"
-            placeholderTextColor={colors.textFaint}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            style={styles.input}
-          />
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            placeholderTextColor={colors.textFaint}
-            secureTextEntry
-            autoCapitalize="none"
-            style={styles.input}
-          />
+          <View style={styles.formCard}>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Email"
+              placeholderTextColor={colors.textFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              style={styles.input}
+            />
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Password"
+              placeholderTextColor={colors.textFaint}
+              secureTextEntry
+              autoCapitalize="none"
+              style={styles.input}
+            />
 
-          {error && <Text style={styles.error}>{error}</Text>}
+            {error && <Text style={styles.error}>{error}</Text>}
 
-          <Button title={isSignUp ? 'Create account' : 'Sign in'} onPress={handleSubmit} loading={loading} />
+            <Button title={isSignUp ? 'Create account' : 'Sign in'} onPress={handleSubmit} loading={loading} />
 
-          {!isSignUp && (
-            <Pressable style={styles.forgotRow} onPress={handleForgotPassword} hitSlop={8}>
-              <Text style={styles.forgotText}>Forgot password?</Text>
-            </Pressable>
-          )}
-          {resetStatus === 'sent' ? (
-            <Text style={styles.resetSent}>Check your email for a reset link.</Text>
-          ) : (
-            resetStatus && <Text style={styles.error}>{resetStatus}</Text>
-          )}
+            {!isSignUp && (
+              <Pressable style={styles.forgotRow} onPress={handleForgotPassword} hitSlop={8}>
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </Pressable>
+            )}
+            {resetStatus === 'sent' ? (
+              <Text style={styles.resetSent}>Check your email for a reset link.</Text>
+            ) : (
+              resetStatus && <Text style={styles.error}>{resetStatus}</Text>
+            )}
+          </View>
 
           <Pressable
             style={styles.switchRow}
@@ -142,7 +168,22 @@ export default function AuthScreen() {
               <Text style={styles.switchLink}>{isSignUp ? 'Sign in' : 'Sign up'}</Text>
             </Text>
           </Pressable>
-        </View>
+
+          <View style={styles.featureRow}>
+            <View style={styles.featureChip}>
+              <Ionicons name="sparkles-outline" size={12} color={colors.textFaint} />
+              <Text style={styles.featureChipText}>AI Explanations</Text>
+            </View>
+            <View style={styles.featureChip}>
+              <Ionicons name="document-text-outline" size={12} color={colors.textFaint} />
+              <Text style={styles.featureChipText}>PDF Reader</Text>
+            </View>
+            <View style={styles.featureChip}>
+              <Ionicons name="school-outline" size={12} color={colors.textFaint} />
+              <Text style={styles.featureChipText}>Vocabulary</Text>
+            </View>
+          </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -152,29 +193,67 @@ function createStyles({ colors, fonts, spacing, radius }) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.ink },
     flex: { flex: 1 },
-    content: { flex: 1, justifyContent: 'center', padding: spacing.lg },
+    content: {
+      flex: 1,
+      justifyContent: 'center',
+      padding: spacing.lg,
+      maxWidth: 440,
+      alignSelf: 'center',
+      width: '100%',
+    },
+    glowOrb: {
+      position: 'absolute',
+      top: '20%',
+      alignSelf: 'center',
+      width: 220,
+      height: 220,
+      borderRadius: 110,
+      backgroundColor: colors.lampSoft,
+    },
     lampBadge: {
-      width: 64,
-      height: 64,
-      borderRadius: radius.lg,
+      width: 72,
+      height: 72,
+      borderRadius: radius.lg + 4,
       backgroundColor: colors.lamp,
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: spacing.md,
       alignSelf: 'center',
     },
-    title: { fontFamily: fonts.displayBold, fontSize: 28, color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.xs },
+    title: {
+      fontFamily: fonts.displayBold,
+      fontSize: 32,
+      color: colors.textPrimary,
+      textAlign: 'center',
+      marginBottom: 2,
+      letterSpacing: -0.3,
+    },
+    tagline: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 13,
+      color: colors.lamp,
+      textAlign: 'center',
+      marginBottom: spacing.sm,
+      letterSpacing: 0.3,
+    },
     subtitle: {
       fontFamily: fonts.body,
       fontSize: 13.5,
       color: colors.textMuted,
       textAlign: 'center',
-      marginBottom: spacing.xl,
+      marginBottom: spacing.lg,
       lineHeight: 19,
       paddingHorizontal: spacing.md,
     },
-    input: {
+    formCard: {
       backgroundColor: colors.paper,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.lg,
+    },
+    input: {
+      backgroundColor: colors.paperRaised,
       borderRadius: radius.md,
       borderWidth: 1,
       borderColor: colors.border,
@@ -191,5 +270,28 @@ function createStyles({ colors, fonts, spacing, radius }) {
     switchRow: { marginTop: spacing.lg, alignItems: 'center' },
     switchText: { fontFamily: fonts.body, fontSize: 13.5, color: colors.textMuted },
     switchLink: { color: colors.lamp, fontFamily: fonts.bodySemiBold },
+    featureRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      marginTop: spacing.xl,
+    },
+    featureChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: colors.paper,
+      paddingVertical: 5,
+      paddingHorizontal: 10,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    featureChipText: {
+      fontFamily: fonts.body,
+      fontSize: 11,
+      color: colors.textFaint,
+    },
   });
 }
+

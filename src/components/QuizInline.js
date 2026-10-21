@@ -1,33 +1,27 @@
-// The interactive multiple-choice quiz, relocated from Milestone 1's
-// ReadScreen (not rewritten) so it can render inline as a chat message.
-// The only real change is reporting a final score back up via onComplete,
-// since progress tracking now lives in Firestore instead of being handled
-// by the screen directly.
-
 import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../contexts/ThemeContext';
 
+const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
+
 export default function QuizInline({ questions, onComplete }) {
   const theme = useTheme();
+  const { colors } = theme;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [answers, setAnswers] = useState({});
   const [reported, setReported] = useState(false);
 
   const selectAnswer = (qIndex, optIndex) => {
-    if (answers[qIndex] !== undefined) return; // already answered
+    if (answers[qIndex] !== undefined) return;
     const next = { ...answers, [qIndex]: optIndex };
     setAnswers(next);
 
-    // §7 backlog: a small nudge of feedback right as the choice lands,
-    // matching how the answer is about to be marked correct/incorrect
-    // below — separate from onComplete's score, which only fires once
-    // every question has been answered.
     const isCorrect = optIndex === questions[qIndex].correctIndex;
     Haptics.notificationAsync(
       isCorrect ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error
-    ).catch(() => {}); // no haptics hardware (e.g. some Android devices, web) — fine to just skip
+    ).catch(() => {});
 
     const allAnswered = questions.every((_, i) => next[i] !== undefined);
     if (allAnswered && !reported) {
@@ -38,9 +32,21 @@ export default function QuizInline({ questions, onComplete }) {
     }
   };
 
+  const answeredCount = Object.keys(answers).length;
+  const isAllAnswered = questions.length > 0 && answeredCount === questions.length;
+  const correctCount = questions.filter((q, i) => answers[i] === q.correctIndex).length;
+  const scorePercent = questions.length > 0 ? Math.round((correctCount / questions.length) * 100) : 0;
+
   return (
     <View style={styles.wrap}>
-      <Text style={styles.label}>Comprehension check</Text>
+      <View style={styles.headerRow}>
+        <Ionicons name="help-circle" size={16} color={colors.lamp} />
+        <Text style={styles.label}>Comprehension Check</Text>
+        <Text style={styles.progressCounter}>
+          {answeredCount}/{questions.length}
+        </Text>
+      </View>
+
       {questions.map((q, qi) => {
         const chosen = answers[qi];
         return (
@@ -52,6 +58,7 @@ export default function QuizInline({ questions, onComplete }) {
               const isChosen = chosen === oi;
               const isCorrect = oi === q.correctIndex;
               const showState = chosen !== undefined;
+              const letter = OPTION_LETTERS[oi] || `${oi + 1}`;
               return (
                 <Pressable
                   key={oi}
@@ -62,42 +69,223 @@ export default function QuizInline({ questions, onComplete }) {
                     showState && isChosen && !isCorrect && styles.optionWrong,
                   ]}
                 >
+                  <View
+                    style={[
+                      styles.letterBadge,
+                      showState && isCorrect && styles.letterBadgeCorrect,
+                      showState && isChosen && !isCorrect && styles.letterBadgeWrong,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.letterText,
+                        showState && isCorrect && styles.letterTextCorrect,
+                        showState && isChosen && !isCorrect && styles.letterTextWrong,
+                      ]}
+                    >
+                      {letter}
+                    </Text>
+                  </View>
                   <Text style={styles.optionText}>{opt}</Text>
+                  {showState && isCorrect && (
+                    <Ionicons name="checkmark-circle" size={18} color={colors.sage} style={styles.stateIcon} />
+                  )}
+                  {showState && isChosen && !isCorrect && (
+                    <Ionicons name="close-circle" size={18} color={colors.coral} style={styles.stateIcon} />
+                  )}
                 </Pressable>
               );
             })}
-            {chosen !== undefined && <Text style={styles.explanation}>{q.explanation}</Text>}
+            {chosen !== undefined && (
+              <View style={styles.explanationBox}>
+                <Ionicons name="information-circle-outline" size={15} color={colors.textMuted} />
+                <Text style={styles.explanation}>{q.explanation}</Text>
+              </View>
+            )}
           </View>
         );
       })}
+
+      {/* Final Score Celebration Card */}
+      {isAllAnswered && (
+        <View
+          style={[
+            styles.scoreBanner,
+            scorePercent >= 80 ? styles.scoreBannerHigh : styles.scoreBannerMed,
+          ]}
+        >
+          <View style={styles.scoreIconWrap}>
+            <Ionicons
+              name={scorePercent === 100 ? 'trophy' : scorePercent >= 70 ? 'ribbon' : 'sparkles'}
+              size={22}
+              color={scorePercent >= 80 ? colors.sage : colors.lamp}
+            />
+          </View>
+          <View style={styles.scoreBody}>
+            <Text style={styles.scoreTitle}>
+              {scorePercent === 100
+                ? 'Flawless Comprehension!'
+                : scorePercent >= 70
+                ? 'Great Reading & Recall!'
+                : 'Keep Practicing!'}
+            </Text>
+            <Text style={styles.scoreSubtitle}>
+              You scored {correctCount} of {questions.length} ({scorePercent}%) recorded to your progress.
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 function createStyles({ colors, fonts, spacing, radius }) {
   return StyleSheet.create({
-    wrap: { minWidth: 230 },
+    wrap: { minWidth: 260 },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: spacing.sm,
+    },
     label: {
+      flex: 1,
       fontFamily: fonts.bodySemiBold,
       fontSize: 12,
       color: colors.textMuted,
       textTransform: 'uppercase',
       letterSpacing: 0.5,
-      marginBottom: spacing.sm,
     },
-    card: { marginBottom: spacing.sm },
-    question: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.textPrimary, marginBottom: spacing.sm },
+    progressCounter: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 12,
+      color: colors.lamp,
+    },
+    card: {
+      marginBottom: spacing.md,
+      backgroundColor: colors.paper,
+      borderRadius: radius.md,
+      padding: spacing.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    question: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 14.5,
+      color: colors.textPrimary,
+      marginBottom: spacing.sm,
+      lineHeight: 20,
+    },
     option: {
+      flexDirection: 'row',
+      alignItems: 'center',
       borderWidth: 1,
       borderColor: colors.border,
       borderRadius: radius.sm,
-      padding: 10,
+      paddingVertical: 9,
+      paddingHorizontal: 10,
       marginBottom: 8,
       backgroundColor: colors.paperRaised,
     },
-    optionCorrect: { borderColor: colors.sage, backgroundColor: colors.sageSoft },
-    optionWrong: { borderColor: colors.coral, backgroundColor: colors.coralSoft },
-    optionText: { fontFamily: fonts.body, fontSize: 13.5, color: colors.textPrimary },
-    explanation: { fontFamily: fonts.body, fontSize: 12.5, color: colors.textMuted, marginTop: 2, fontStyle: 'italic' },
+    letterBadge: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: colors.paper,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    letterBadgeCorrect: {
+      backgroundColor: colors.sage,
+      borderColor: colors.sage,
+    },
+    letterBadgeWrong: {
+      backgroundColor: colors.coral,
+      borderColor: colors.coral,
+    },
+    letterText: {
+      fontFamily: fonts.bodyBold,
+      fontSize: 11,
+      color: colors.textMuted,
+    },
+    letterTextCorrect: {
+      color: colors.ink,
+    },
+    letterTextWrong: {
+      color: '#fff',
+    },
+    optionCorrect: {
+      borderColor: colors.sage,
+      backgroundColor: colors.sageSoft,
+    },
+    optionWrong: {
+      borderColor: colors.coral,
+      backgroundColor: colors.coralSoft,
+    },
+    optionText: {
+      flex: 1,
+      fontFamily: fonts.body,
+      fontSize: 13.5,
+      color: colors.textPrimary,
+      lineHeight: 18,
+    },
+    stateIcon: {
+      marginLeft: 6,
+    },
+    explanationBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 6,
+      backgroundColor: colors.paperRaised,
+      padding: 8,
+      borderRadius: radius.sm,
+      marginTop: 4,
+    },
+    explanation: {
+      flex: 1,
+      fontFamily: fonts.body,
+      fontSize: 12.5,
+      color: colors.textMuted,
+      lineHeight: 17,
+      fontStyle: 'italic',
+    },
+    scoreBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: spacing.md,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      marginTop: spacing.xs,
+    },
+    scoreBannerHigh: {
+      backgroundColor: colors.sageSoft,
+      borderColor: colors.sage,
+    },
+    scoreBannerMed: {
+      backgroundColor: colors.lampSoft,
+      borderColor: colors.lamp,
+    },
+    scoreIconWrap: {
+      marginRight: spacing.sm,
+    },
+    scoreBody: {
+      flex: 1,
+    },
+    scoreTitle: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 14,
+      color: colors.textPrimary,
+      marginBottom: 2,
+    },
+    scoreSubtitle: {
+      fontFamily: fonts.body,
+      fontSize: 12,
+      color: colors.textMuted,
+      lineHeight: 16,
+    },
   });
 }
+
