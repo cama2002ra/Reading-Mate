@@ -16,7 +16,7 @@
 // dependency) — selection here is just "which word tokens are highlighted,"
 // tracked as a start/end index into the word list.
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -46,7 +46,23 @@ function tokenize(text) {
 // can be visually active at once (a tapped word plus a moving read-aloud
 // highlight elsewhere in the same text) without conflict, since they're
 // tracked and styled separately.
-export default function TappableText({ text, style, onExplain, speakingCharIndex }) {
+// Each word is its own memoized component, so tapping one word re-renders
+// only the words whose state actually changed (the old and new selection)
+// instead of every token in the passage — on a long text the old approach
+// took about a second per tap.
+const Space = React.memo(function Space({ token, style }) {
+  return <Text style={style}>{token}</Text>;
+});
+
+const Word = React.memo(function Word({ index, token, style, selected, speaking, selectedStyle, speakingStyle, onTap }) {
+  return (
+    <Pressable onPress={() => onTap(index)} hitSlop={2}>
+      <Text style={[style, selected && selectedStyle, speaking && speakingStyle]}>{token}</Text>
+    </Pressable>
+  );
+});
+
+export default function TappableText({ text, style, onExplain, onLoop, onSelectionChange, speakingCharIndex }) {
   const theme = useTheme();
   const { colors } = theme;
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -57,6 +73,10 @@ export default function TappableText({ text, style, onExplain, speakingCharIndex
 
   const hasSelection = selStart !== null && selEnd !== null;
   const isSingleWord = hasSelection && selStart === selEnd;
+
+  // Latest selection, readable from the stable tap handler below.
+  const selRef = useRef({ selStart, selEnd });
+  selRef.current = { selStart, selEnd };
 
   // Maps a plain character offset into `text` (what onBoundary reports)
   // to which token in `tokens` contains it, so the read-aloud highlight
@@ -76,22 +96,40 @@ export default function TappableText({ text, style, onExplain, speakingCharIndex
     setSelEnd(null);
   };
 
-  const handleWordTap = (tokenIndex) => {
-    if (!hasSelection) {
-      setSelStart(tokenIndex);
-      setSelEnd(tokenIndex);
+  // One tap = one word, always. A tap NEVER silently stretches the
+  // selection over everything in between (that was what made a whole
+  // paragraph light up by accident). To select more, use the arrows
+  // (one word at a time) or the "Sentence" button — both deliberate.
+  //   - nothing selected      -> select the tapped word
+  //   - tap inside selection  -> deselect (the easy way to cancel)
+  //   - tap anywhere else     -> start over with just that word
+  const handleWordTap = useCallback((tokenIndex) => {
+    const { selStart: a, selEnd: b } = selRef.current;
+    if (a !== null && b !== null && tokenIndex >= a && tokenIndex <= b) {
+      setSelStart(null);
+      setSelEnd(null);
       return;
     }
-    // Tapping the only selected word again deselects it — otherwise there'd
-    // be no way to clear a single-word selection except the × button.
-    if (isSingleWord && tokenIndex === selStart) {
-      clearSelection();
-      return;
+    setSelStart(tokenIndex);
+    setSelEnd(tokenIndex);
+  }, []);
+
+  // Selects the whole sentence around the current selection, on request.
+  const selectSentence = () => {
+    if (!hasSelection) return;
+    const endsSentence = (i) => /[.!?]["')\]]*$/.test(tokens[i]);
+    let start = selStart;
+    for (let k = wordTokenIndices.indexOf(selStart) - 1; k >= 0; k--) {
+      if (endsSentence(wordTokenIndices[k])) break;
+      start = wordTokenIndices[k];
     }
-    // Tapping any other word grows the selection to also cover it — the
-    // range always stays [min(selStart, selEnd, tapped), max(...)].
-    setSelStart(Math.min(selStart, tokenIndex));
-    setSelEnd(Math.max(selEnd, tokenIndex));
+    let end = selEnd;
+    for (let k = wordTokenIndices.indexOf(selEnd); k < wordTokenIndices.length; k++) {
+      end = wordTokenIndices[k];
+      if (endsSentence(end)) break;
+    }
+    setSelStart(start);
+    setSelEnd(end);
   };
 
   const expandLeft = () => {
@@ -109,28 +147,73 @@ export default function TappableText({ text, style, onExplain, speakingCharIndex
 
   const selectedText = hasSelection ? tokens.slice(selStart, selEnd + 1).join('') : '';
 
+  // When a parent supplies onSelectionChange, the controls live in the
+  // always-visible SelectionBar (see SelectionBar.js) instead of an inline
+  // toolbar under the paragraph. Reports on every selection change, and
+  // clears itself on unmount.
+  const ownerId = useRef(Math.random().toString(36).slice(2)).current;
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  onSelectionChangeRef.current = onSelectionChange;
+  useEffect(() => {
+    const report = onSelectionChangeRef.current;
+    if (!report) return undefined;
+    if (!hasSelection) {
+      report({ id: ownerId, text: null });
+    } else {
+      const picked = selectedText.trim();
+      const single = isSingleWord;
+      report({
+        id: ownerId,
+        text: picked,
+        isSingleWord: single,
+        canExpandLeft,
+        canExpandRight,
+        expandLeft,
+        expandRight,
+        selectSentence,
+        clear: clearSelection,
+        explain: () => {
+          clearSelection();
+          onExplain?.(picked, single);
+        },
+        loop: onLoop
+          ? () => {
+              clearSelection();
+              onLoop(picked);
+            }
+          : null,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selStart, selEnd]);
+  useEffect(
+    () => () => onSelectionChangeRef.current?.({ id: ownerId, text: null }),
+    [ownerId]
+  );
+
   return (
     <View>
       <View style={styles.wrap}>
-        {tokens.map((token, i) => {
-          if (token.trim() === '') {
-            return (
-              <Text key={i} style={style}>
-                {token}
-              </Text>
-            );
-          }
-          const selected = hasSelection && i >= selStart && i <= selEnd;
-          const speaking = speakingTokenIndex === i;
-          return (
-            <Pressable key={i} onPress={() => handleWordTap(i)} hitSlop={2}>
-              <Text style={[style, selected && styles.selectedWord, speaking && styles.speakingWord]}>{token}</Text>
-            </Pressable>
-          );
-        })}
+        {tokens.map((token, i) =>
+          token.trim() === '' ? (
+            <Space key={i} token={token} style={style} />
+          ) : (
+            <Word
+              key={i}
+              index={i}
+              token={token}
+              style={style}
+              selected={hasSelection && i >= selStart && i <= selEnd}
+              speaking={speakingTokenIndex === i}
+              selectedStyle={styles.selectedWord}
+              speakingStyle={styles.speakingWord}
+              onTap={handleWordTap}
+            />
+          )
+        )}
       </View>
 
-      {hasSelection && (
+      {hasSelection && !onSelectionChange && (
         <View style={styles.toolbar}>
           <Pressable
             onPress={expandLeft}
@@ -141,9 +224,17 @@ export default function TappableText({ text, style, onExplain, speakingCharIndex
             <Ionicons name="chevron-back" size={15} color={canExpandLeft ? colors.lamp : colors.textFaint} />
           </Pressable>
 
-          <Pressable style={styles.explainBtn} onPress={() => onExplain?.(selectedText.trim(), isSingleWord)}>
+          <Pressable
+            style={styles.explainBtn}
+            onPress={() => {
+              const text = selectedText.trim();
+              const single = isSingleWord;
+              clearSelection(); // the highlight never gets stuck after asking
+              onExplain?.(text, single);
+            }}
+          >
             <Ionicons name="sparkles" size={12} color={colors.ink} />
-            <Text style={styles.explainBtnText}>{isSingleWord ? 'Define' : 'Explain'}</Text>
+            <Text style={styles.explainBtnText}>Re-read for me</Text>
           </Pressable>
 
           <Pressable
@@ -155,7 +246,27 @@ export default function TappableText({ text, style, onExplain, speakingCharIndex
             <Ionicons name="chevron-forward" size={15} color={canExpandRight ? colors.lamp : colors.textFaint} />
           </Pressable>
 
-          <Pressable onPress={clearSelection} style={styles.closeBtn} hitSlop={6}>
+          {onLoop && (
+            <Pressable
+              onPress={() => {
+                const text = selectedText.trim();
+                clearSelection();
+                onLoop(text);
+              }}
+              style={styles.loopBtn}
+              hitSlop={6}
+              accessibilityLabel="Listen to the selection on loop"
+            >
+              <Ionicons name="repeat" size={14} color={colors.lamp} />
+              <Text style={styles.sentenceBtnText}>Loop</Text>
+            </Pressable>
+          )}
+
+          <Pressable onPress={selectSentence} style={styles.sentenceBtn} hitSlop={6}>
+            <Text style={styles.sentenceBtnText}>Sentence</Text>
+          </Pressable>
+
+          <Pressable onPress={clearSelection} style={styles.closeBtn} hitSlop={10}>
             <Ionicons name="close" size={15} color={colors.textFaint} />
           </Pressable>
         </View>
@@ -171,6 +282,13 @@ function createStyles({ colors, fonts, spacing, radius, shadow }) {
       backgroundColor: colors.lampSoft,
       borderRadius: 3,
       overflow: 'hidden',
+      color: colors.lamp,
+    },
+    // The word currently being read aloud: underlined, so it stays visible
+    // even when it is also selected (selection uses a background instead).
+    speakingWord: {
+      textDecorationLine: 'underline',
+      textDecorationColor: colors.lamp,
       color: colors.lamp,
     },
     toolbar: {
@@ -203,9 +321,12 @@ function createStyles({ colors, fonts, spacing, radius, shadow }) {
       color: colors.ink,
       marginLeft: 5,
     },
+    sentenceBtn: { paddingHorizontal: 8, paddingVertical: 4 },
+    loopBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4 },
+    sentenceBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.lamp },
     closeBtn: {
-      width: 24,
-      height: 24,
+      width: 30,
+      height: 30,
       alignItems: 'center',
       justifyContent: 'center',
       marginLeft: 2,

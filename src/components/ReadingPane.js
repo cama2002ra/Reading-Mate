@@ -24,6 +24,8 @@ export default function ReadingPane({
   sourceType, // 'image' | 'file' | null — what this passage was simplified from, if anything
   onViewSource,
   onExplain,
+  onLoop,
+  onSelectionChange,
   speaking,
   onToggleSpeak,
   speakingCharIndex,
@@ -87,6 +89,8 @@ export default function ReadingPane({
         text={text}
         style={[styles.passageText, { fontSize: readingFontStyle.fontSize, lineHeight: readingFontStyle.lineHeight }]}
         onExplain={onExplain}
+        onLoop={onLoop}
+        onSelectionChange={onSelectionChange}
         speakingCharIndex={speaking ? speakingCharIndex : null}
       />
     </View>

@@ -367,7 +367,8 @@ export function buildPdfReaderHtml({ fileUrl, colors }) {
     row.innerHTML = '';
     var actions = [];
     if (isSingleWord) actions.push({ key: 'define', label: 'Define' });
-    actions.push({ key: 'explain', label: 'Explain' });
+    actions.push({ key: 'explain', label: 'Re-read for me' });
+    actions.push({ key: 'loop', label: 'Listen on loop' });
     actions.push({ key: 'simplify', label: 'Simplify' });
     actions.push({ key: 'quiz', label: 'Quiz me' });
     actions.push({ key: 'custom', label: 'Custom…' });

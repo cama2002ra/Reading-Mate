@@ -105,7 +105,7 @@ const dotStyles = StyleSheet.create({
 // read" state (only one utterance plays at a time), this component just
 // reflects and triggers it. `onBookmark` / `bookmarked` do the same for
 // the bookmark star (§7 backlog).
-export default function ChatBubble({ message, onExplain, onQuizComplete, speaking, onToggleSpeak, onBookmark, bookmarked }) {
+export default function ChatBubble({ message, onExplain, onLoop, onSelectionChange, onQuizComplete, speaking, onToggleSpeak, onBookmark, bookmarked }) {
   const theme = useTheme();
   const { colors } = theme;
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -216,7 +216,7 @@ export default function ChatBubble({ message, onExplain, onQuizComplete, speakin
           ) : isUser ? (
             <Text style={styles.userText}>{message.content}</Text>
           ) : (
-            <TappableText text={message.content} style={styles.assistantText} onExplain={onExplain} />
+            <TappableText text={message.content} style={styles.assistantText} onExplain={onExplain} onLoop={onLoop} onSelectionChange={onSelectionChange} />
           )}
         </View>
 
