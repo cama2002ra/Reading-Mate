@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator, Alert, Animated, Easing } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,6 +34,53 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { LEVELS, nextLevel } from '../constants/levels';
 
+const SAMPLE_PASSAGES = [
+  {
+    id: 'space',
+    icon: 'telescope-outline',
+    title: 'James Webb Space Telescope',
+    tag: 'Space & Astronomy',
+    color: '#8082ED',
+    excerpt: 'How infrared mirrors capture light from the very first stars formed after the Big Bang.',
+    text: `The James Webb Space Telescope orbits the Sun nearly one million miles away from Earth. Unlike older optical telescopes, Webb detects infrared light, which penetrates deep cosmic dust clouds and reveals stars forming billions of years ago.\n\nBy capturing light that has traveled through space for over thirteen billion years, Webb acts as a cosmic time machine, showing humanity the very first galaxies that illuminated the dark early universe. Its golden honeycomb mirror measures 21 feet across, allowing it to detect the faint heat signatures of distant alien exoplanets and unravel the greatest mysteries of cosmological evolution.`,
+  },
+  {
+    id: 'ocean',
+    icon: 'water-outline',
+    title: 'Deep Ocean Bioluminescence',
+    tag: 'Marine Biology',
+    color: '#2F8F5B',
+    excerpt: 'Living light in the pitch-black abyss where sunlight never penetrates.',
+    text: `In the perpetual twilight of the deep ocean, thousands of feet beneath the surface where sunlight cannot penetrate, more than seventy percent of marine creatures generate their own light. This biological phenomenon, called bioluminescence, occurs through a chemical reaction between a molecule called luciferin and an enzyme called luciferase.\n\nDeep-sea anglerfish, glowing siphonophores, and translucent squids use this living glow to camouflage against predators, signal mates across the dark abyss, and lure curious prey directly into their grasp in the oceanic midnight zone.`,
+  },
+  {
+    id: 'history',
+    icon: 'compass-outline',
+    title: 'The Lost Sunken City',
+    tag: 'Ancient History',
+    color: '#E8A33D',
+    excerpt: 'The discovery of Thonis-Heracleion underwater off the coast of Egypt.',
+    text: `For more than a thousand years, the ancient Egyptian port city of Thonis-Heracleion was believed to be merely a mythical legend mentioned only in classical Greek texts and mythology. In the year 2000, underwater archaeologists submerged in the Mediterranean Sea discovered the submerged metropolis buried beneath thirty feet of water and sand.\n\nDivers uncovered colossal stone statues of pharaohs, sunken merchant ships, gold coins, and preserved temple ruins, solving a historical mystery lost to the waves since cataclysmic earthquakes submerged it into the bay.`,
+  },
+  {
+    id: 'brain',
+    icon: 'sparkles-outline',
+    title: 'How Your Brain Learns',
+    tag: 'Neuroscience',
+    color: '#E8735D',
+    excerpt: 'How neuroplasticity rewires synapses when reading new words.',
+    text: `Every time you practice reading a challenging passage or learn an unfamiliar word, physical changes occur inside your brain. Neuroscientists refer to this extraordinary adaptability as neuroplasticity.\n\nWhen neurons repeatedly communicate with one another, the synaptic pathways connecting them strengthen and transmit electrical impulses more rapidly. Through deliberate repetition, focused curiosity, and spaced review, you literally reshape your brain's architecture, transforming difficult vocabulary into effortless comprehension.`,
+  },
+];
+
+function estimateReading(text) {
+  if (!text || !text.trim()) return null;
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+  const minutes = Math.max(1, Math.ceil(wordCount / 160));
+  return { wordCount, minutes };
+}
+
 // Decides how a file picked via "Choose file" gets handled — the "if it
 // can go straight into the reader, render it as-is; if not, the app
 // extracts and rewrites it" split the file-upload feature is built around:
@@ -64,6 +111,7 @@ function titleFromFileName(name) {
   return cleaned || 'Reading session';
 }
 
+
 export default function NewSessionScreen({ route, navigation }) {
   const theme = useTheme();
   const { colors, spacing } = theme;
@@ -73,6 +121,7 @@ export default function NewSessionScreen({ route, navigation }) {
   const [level, setLevel] = useState(LEVELS[1].key);
   const [activeTab, setActiveTab] = useState(route?.params?.initialMode || 'pdf'); // 'pdf' | 'text' | 'photo'
   const [inputText, setInputText] = useState('');
+  const [selectedSampleId, setSelectedSampleId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null); // 0-1, or null when not uploading
   const [error, setError] = useState(null);
@@ -84,11 +133,24 @@ export default function NewSessionScreen({ route, navigation }) {
   // simplify default the instant it's picked. { asset, mimeType } | null.
   const [pendingPhoto, setPendingPhoto] = useState(null);
 
+  // Entrance animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(14)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 450, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 450, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const readingStats = useMemo(() => estimateReading(inputText), [inputText]);
+
   useEffect(() => {
     if (route?.params?.initialMode) {
       setActiveTab(route.params.initialMode);
     }
   }, [route?.params?.initialMode]);
+
 
   // Adaptive level suggestion: if the last 3 quiz scores at the current
   // level average above 80%, nudge toward the next level up.
@@ -352,177 +414,244 @@ export default function NewSessionScreen({ route, navigation }) {
 
   return (
     <ScreenContainer>
-      <Text style={styles.heading}>Start a Reading</Text>
-      <Text style={styles.subheading}>
-        Choose your material below — Reading Mate tailors everything to your level.
-      </Text>
+      <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+        <Text style={styles.heading}>Start a Reading</Text>
+        <Text style={styles.subheading}>
+          Choose your material below — Reading Mate tailors everything to your level.
+        </Text>
 
-      {/* Target Reading Level Row */}
-      <View style={styles.levelRow}>
-        {LEVELS.map((l) => (
-          <Pressable
-            key={l.key}
-            onPress={() => setLevel(l.key)}
-            style={[styles.chip, level === l.key && styles.chipActive]}
-          >
-            <Text style={[styles.chipText, level === l.key && styles.chipTextActive]}>{l.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {suggestion && !dismissedSuggestion && (
-        <View style={styles.suggestionChip}>
-          <Ionicons name="trending-up" size={14} color={colors.sage} />
-          <Pressable
-            style={styles.suggestionTextWrap}
-            onPress={() => {
-              setLevel(suggestion.key);
-              setDismissedSuggestion(true);
-            }}
-          >
-            <Text style={styles.suggestionText}>You're doing great — try {suggestion.label}?</Text>
-          </Pressable>
-          <Pressable hitSlop={8} onPress={() => setDismissedSuggestion(true)}>
-            <Ionicons name="close" size={14} color={colors.textFaint} />
-          </Pressable>
-        </View>
-      )}
-
-      {/* Studio Segmented Tabs */}
-      <View style={styles.studioTabs}>
-        <Pressable
-          style={[styles.studioTab, activeTab === 'pdf' && styles.studioTabActive]}
-          onPress={() => setActiveTab('pdf')}
-        >
-          <Ionicons
-            name="document-text-outline"
-            size={16}
-            color={activeTab === 'pdf' ? colors.ink : colors.textMuted}
-            style={{ marginRight: 6 }}
-          />
-          <Text style={[styles.studioTabText, activeTab === 'pdf' && styles.studioTabTextActive]}>
-            Document / PDF
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.studioTab, activeTab === 'text' && styles.studioTabActive]}
-          onPress={() => setActiveTab('text')}
-        >
-          <Ionicons
-            name="create-outline"
-            size={16}
-            color={activeTab === 'text' ? colors.ink : colors.textMuted}
-            style={{ marginRight: 6 }}
-          />
-          <Text style={[styles.studioTabText, activeTab === 'text' && styles.studioTabTextActive]}>
-            Paste Text
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.studioTab, activeTab === 'photo' && styles.studioTabActive]}
-          onPress={() => setActiveTab('photo')}
-        >
-          <Ionicons
-            name="camera-outline"
-            size={16}
-            color={activeTab === 'photo' ? colors.ink : colors.textMuted}
-            style={{ marginRight: 6 }}
-          />
-          <Text style={[styles.studioTabText, activeTab === 'photo' && styles.studioTabTextActive]}>
-            Photo / Scan
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* Tab 1: PDF Document */}
-      {activeTab === 'pdf' && (
-        <View style={styles.studioPanel}>
-          <View style={styles.uploadBox}>
-            <View style={styles.uploadIconWrap}>
-              <Ionicons name="cloud-upload-outline" size={38} color={colors.lamp} />
-            </View>
-            <Text style={styles.uploadTitle}>Open an Interactive Document</Text>
-            <Text style={styles.uploadDesc}>
-              Upload textbooks, research articles, or lecture slides (PDF up to 15 MB).
-              Opens in the interactive reader with instant on-page definitions, AI explanations & page quizzes.
-            </Text>
-            <View style={{ width: '100%', marginTop: spacing.md }}>
-              <Button
-                title="Choose PDF Document"
-                onPress={startFromFile}
-                loading={loading}
-              />
-            </View>
-          </View>
-        </View>
-      )}
-
-      {/* Tab 2: Paste Text */}
-      {activeTab === 'text' && (
-        <View style={styles.studioPanel}>
-          <TextInput
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Paste an article, chapter, homework assignment, or challenging text…"
-            placeholderTextColor={colors.textFaint}
-            multiline
-            style={styles.input}
-            editable={!loading}
-          />
-          <View style={styles.textMetaRow}>
-            <Text style={styles.textCharCount}>
-              {inputText.length > 0 ? `${inputText.length} characters` : 'Ready to simplify'}
-            </Text>
-          </View>
-          <Button title="Simplify & Start Reading" onPress={startFromText} loading={loading} />
-        </View>
-      )}
-
-      {/* Tab 3: Photo / Scan */}
-      {activeTab === 'photo' && (
-        <View style={styles.studioPanel}>
-          <View style={styles.photoOptionsGrid}>
+        {/* Target Reading Level Row */}
+        <View style={styles.levelRow}>
+          {LEVELS.map((l) => (
             <Pressable
-              style={styles.photoOptionCard}
-              onPress={() => startFromImage(true)}
-              disabled={loading}
+              key={l.key}
+              onPress={() => setLevel(l.key)}
+              style={[styles.chip, level === l.key && styles.chipActive]}
             >
-              <View style={[styles.photoOptionIcon, { backgroundColor: colors.coralSoft }]}>
-                <Ionicons name="camera" size={26} color={colors.coral} />
-              </View>
-              <Text style={styles.photoOptionTitle}>Take Photo</Text>
-              <Text style={styles.photoOptionDesc}>Snap a page from a physical book, worksheet, or handout</Text>
+              <Text style={[styles.chipText, level === l.key && styles.chipTextActive]}>{l.label}</Text>
             </Pressable>
+          ))}
+        </View>
 
+        {suggestion && !dismissedSuggestion && (
+          <View style={styles.suggestionChip}>
+            <Ionicons name="trending-up" size={14} color={colors.sage} />
             <Pressable
-              style={styles.photoOptionCard}
-              onPress={() => startFromImage(false)}
-              disabled={loading}
+              style={styles.suggestionTextWrap}
+              onPress={() => {
+                setLevel(suggestion.key);
+                setDismissedSuggestion(true);
+              }}
             >
-              <View style={[styles.photoOptionIcon, { backgroundColor: colors.lampSoft }]}>
-                <Ionicons name="images" size={26} color={colors.lamp} />
-              </View>
-              <Text style={styles.photoOptionTitle}>Photo Library</Text>
-              <Text style={styles.photoOptionDesc}>Pick an existing image of text from your device photo gallery</Text>
+              <Text style={styles.suggestionText}>You're doing great — try {suggestion.label}?</Text>
+            </Pressable>
+            <Pressable hitSlop={8} onPress={() => setDismissedSuggestion(true)}>
+              <Ionicons name="close" size={14} color={colors.textFaint} />
             </Pressable>
           </View>
-        </View>
-      )}
+        )}
 
-      {error && <Text style={styles.error}>{error}</Text>}
-
-      {loading && (
-        <View style={{ alignItems: 'center', marginTop: spacing.md }}>
-          <ActivityIndicator color={colors.lamp} />
-          {uploadProgress !== null && (
-            <Text style={styles.uploadProgressText}>
-              {uploadProgress > 0 ? `Uploading… ${Math.round(uploadProgress * 100)}%` : 'Uploading document…'}
+        {/* Studio Segmented Tabs */}
+        <View style={styles.studioTabs}>
+          <Pressable
+            style={[styles.studioTab, activeTab === 'pdf' && styles.studioTabActive]}
+            onPress={() => setActiveTab('pdf')}
+          >
+            <Ionicons
+              name="document-text-outline"
+              size={16}
+              color={activeTab === 'pdf' ? colors.ink : colors.textMuted}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={[styles.studioTabText, activeTab === 'pdf' && styles.studioTabTextActive]}>
+              Document / PDF
             </Text>
-          )}
+          </Pressable>
+
+          <Pressable
+            style={[styles.studioTab, activeTab === 'text' && styles.studioTabActive]}
+            onPress={() => setActiveTab('text')}
+          >
+            <Ionicons
+              name="create-outline"
+              size={16}
+              color={activeTab === 'text' ? colors.ink : colors.textMuted}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={[styles.studioTabText, activeTab === 'text' && styles.studioTabTextActive]}>
+              Paste Text
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.studioTab, activeTab === 'photo' && styles.studioTabActive]}
+            onPress={() => setActiveTab('photo')}
+          >
+            <Ionicons
+              name="camera-outline"
+              size={16}
+              color={activeTab === 'photo' ? colors.ink : colors.textMuted}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={[styles.studioTabText, activeTab === 'photo' && styles.studioTabTextActive]}>
+              Photo / Scan
+            </Text>
+          </Pressable>
         </View>
-      )}
+
+        {/* Tab 1: PDF Document */}
+        {activeTab === 'pdf' && (
+          <View style={styles.studioPanel}>
+            <View style={styles.uploadBox}>
+              <View style={styles.uploadIconWrap}>
+                <Ionicons name="cloud-upload-outline" size={38} color={colors.lamp} />
+              </View>
+              <Text style={styles.uploadTitle}>Open an Interactive Document</Text>
+              <Text style={styles.uploadDesc}>
+                Upload textbooks, research articles, or lecture slides (PDF up to 15 MB).
+                Opens in the interactive reader with instant on-page definitions, AI explanations & page quizzes.
+              </Text>
+              <View style={{ width: '100%', marginTop: spacing.md }}>
+                <Button
+                  title="Choose PDF Document"
+                  onPress={startFromFile}
+                  loading={loading}
+                />
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Tab 2: Paste Text */}
+        {activeTab === 'text' && (
+          <View style={styles.studioPanel}>
+            <TextInput
+              value={inputText}
+              onChangeText={(text) => {
+                setInputText(text);
+                if (selectedSampleId) setSelectedSampleId(null);
+              }}
+              placeholder="Paste an article, chapter, homework assignment, or challenging text…"
+              placeholderTextColor={colors.textFaint}
+              multiline
+              style={styles.input}
+              editable={!loading}
+            />
+
+            {/* Reading Stats & Action Bar */}
+            <View style={styles.textMetaRow}>
+              {readingStats ? (
+                <View style={styles.statsBadgeRow}>
+                  <View style={styles.statChip}>
+                    <Ionicons name="document-text-outline" size={12} color={colors.lamp} />
+                    <Text style={styles.statChipText}>{readingStats.wordCount} words</Text>
+                  </View>
+                  <View style={styles.statChip}>
+                    <Ionicons name="time-outline" size={12} color={colors.sage} />
+                    <Text style={styles.statChipText}>~{readingStats.minutes} min read</Text>
+                  </View>
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => {
+                      setInputText('');
+                      setSelectedSampleId(null);
+                    }}
+                    style={styles.clearBtn}
+                  >
+                    <Ionicons name="close-circle-outline" size={13} color={colors.textFaint} />
+                    <Text style={styles.clearBtnText}>Clear</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Text style={styles.textCharCount}>Ready to simplify</Text>
+              )}
+            </View>
+
+            <Button title="Simplify & Start Reading" onPress={startFromText} loading={loading} />
+
+            {/* 1-Tap Sample Passages */}
+            <View style={styles.presetsSection}>
+              <View style={styles.presetsHeaderRow}>
+                <Ionicons name="sparkles" size={14} color={colors.lamp} />
+                <Text style={styles.presetsHeading}>Instant Starter Passages</Text>
+              </View>
+              <Text style={styles.presetsSubtitle}>
+                No text to paste? Tap a topic below to test reading, instant definitions, and inline quizzes:
+              </Text>
+              <View style={styles.presetsGrid}>
+                {SAMPLE_PASSAGES.map((sample) => {
+                  const isSelected = selectedSampleId === sample.id;
+                  return (
+                    <Pressable
+                      key={sample.id}
+                      style={[styles.presetCard, isSelected && styles.presetCardActive]}
+                      onPress={() => {
+                        setSelectedSampleId(sample.id);
+                        setInputText(sample.text);
+                      }}
+                    >
+                      <View style={styles.presetTopRow}>
+                        <View style={[styles.presetIconWrap, { backgroundColor: sample.color + '20' }]}>
+                          <Ionicons name={sample.icon} size={16} color={sample.color} />
+                        </View>
+                        <View style={[styles.presetTag, { backgroundColor: sample.color + '18' }]}>
+                          <Text style={[styles.presetTagText, { color: sample.color }]}>{sample.tag}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.presetTitle} numberOfLines={1}>{sample.title}</Text>
+                      <Text style={styles.presetExcerpt} numberOfLines={2}>{sample.excerpt}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Tab 3: Photo / Scan */}
+        {activeTab === 'photo' && (
+          <View style={styles.studioPanel}>
+            <View style={styles.photoOptionsGrid}>
+              <Pressable
+                style={styles.photoOptionCard}
+                onPress={() => startFromImage(true)}
+                disabled={loading}
+              >
+                <View style={[styles.photoOptionIcon, { backgroundColor: colors.coralSoft }]}>
+                  <Ionicons name="camera" size={26} color={colors.coral} />
+                </View>
+                <Text style={styles.photoOptionTitle}>Take Photo</Text>
+                <Text style={styles.photoOptionDesc}>Snap a page from a physical book, worksheet, or handout</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.photoOptionCard}
+                onPress={() => startFromImage(false)}
+                disabled={loading}
+              >
+                <View style={[styles.photoOptionIcon, { backgroundColor: colors.lampSoft }]}>
+                  <Ionicons name="images" size={26} color={colors.lamp} />
+                </View>
+                <Text style={styles.photoOptionTitle}>Photo Library</Text>
+                <Text style={styles.photoOptionDesc}>Pick an existing image of text from your device photo gallery</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {error && <Text style={styles.error}>{error}</Text>}
+
+        {loading && (
+          <View style={{ alignItems: 'center', marginTop: spacing.md }}>
+            <ActivityIndicator color={colors.lamp} />
+            {uploadProgress !== null && (
+              <Text style={styles.uploadProgressText}>
+                {uploadProgress > 0 ? `Uploading… ${Math.round(uploadProgress * 100)}%` : 'Uploading document…'}
+              </Text>
+            )}
+          </View>
+        )}
+      </Animated.View>
 
       <AttachmentInstructionModal
         visible={!!pendingPhoto}
@@ -657,13 +786,126 @@ function createStyles({ colors, fonts, spacing, radius, shadow }) {
     },
     textMetaRow: {
       flexDirection: 'row',
-      justifyContent: 'flex-end',
+      alignItems: 'center',
+      justifyContent: 'space-between',
       marginBottom: spacing.md,
     },
     textCharCount: {
       fontFamily: fonts.body,
       fontSize: 11.5,
       color: colors.textFaint,
+    },
+    statsBadgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    statChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: colors.paperRaised,
+      paddingVertical: 3,
+      paddingHorizontal: 8,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    statChipText: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 11,
+      color: colors.textMuted,
+    },
+    clearBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      paddingVertical: 3,
+      paddingHorizontal: 6,
+    },
+    clearBtnText: {
+      fontFamily: fonts.body,
+      fontSize: 11,
+      color: colors.textFaint,
+    },
+
+    // Presets Section
+    presetsSection: {
+      marginTop: spacing.lg,
+      paddingTop: spacing.md,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    presetsHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 4,
+    },
+    presetsHeading: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 13,
+      color: colors.lamp,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    presetsSubtitle: {
+      fontFamily: fonts.body,
+      fontSize: 12,
+      color: colors.textMuted,
+      marginBottom: spacing.sm,
+      lineHeight: 16,
+    },
+    presetsGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+    },
+    presetCard: {
+      width: '48%',
+      backgroundColor: colors.paper,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.sm + 2,
+    },
+    presetCardActive: {
+      borderColor: colors.lamp,
+      backgroundColor: colors.lampSoft,
+    },
+    presetTopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 6,
+    },
+    presetIconWrap: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    presetTag: {
+      paddingVertical: 2,
+      paddingHorizontal: 6,
+      borderRadius: 4,
+    },
+    presetTagText: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 9.5,
+    },
+    presetTitle: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 12.5,
+      color: colors.textPrimary,
+      marginBottom: 2,
+    },
+    presetExcerpt: {
+      fontFamily: fonts.body,
+      fontSize: 11,
+      color: colors.textMuted,
+      lineHeight: 14,
     },
 
     // Photo Options Grid
@@ -707,3 +949,4 @@ function createStyles({ colors, fonts, spacing, radius, shadow }) {
     uploadProgressText: { fontFamily: fonts.body, fontSize: 12, color: colors.textMuted, marginTop: 6 },
   });
 }
+

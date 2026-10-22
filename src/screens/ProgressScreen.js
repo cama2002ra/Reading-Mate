@@ -23,7 +23,71 @@ function latestLevel(scores) {
   return scores[scores.length - 1]?.level || null;
 }
 
+const MILESTONES = [
+  {
+    id: 'first_read',
+    title: 'First Flight',
+    desc: 'Read 1st passage',
+    icon: 'airplane-outline',
+    color: '#8082ED',
+    check: (p) => (p.passagesRead || 0) >= 1,
+    progress: (p) => Math.min(1, (p.passagesRead || 0) / 1),
+    label: (p) => `${Math.min(1, p.passagesRead || 0)}/1`,
+  },
+  {
+    id: 'streak_3',
+    title: 'On Fire',
+    desc: '3-day reading streak',
+    icon: 'flame',
+    color: '#E8A33D',
+    check: (p) => (p.streak || 0) >= 3,
+    progress: (p) => Math.min(1, (p.streak || 0) / 3),
+    label: (p) => `${Math.min(3, p.streak || 0)}/3d`,
+  },
+  {
+    id: 'vocab_5',
+    title: 'Word Collector',
+    desc: '5+ words saved',
+    icon: 'bookmarks-outline',
+    color: '#6FCF97',
+    check: (p) => (p.wordsLearned?.length || 0) >= 5,
+    progress: (p) => Math.min(1, (p.wordsLearned?.length || 0) / 5),
+    label: (p) => `${Math.min(5, p.wordsLearned?.length || 0)}/5w`,
+  },
+  {
+    id: 'quiz_ace',
+    title: 'Comprehension Ace',
+    desc: '80%+ on any quiz',
+    icon: 'trophy-outline',
+    color: '#E8A33D',
+    check: (p) => (p.recentQuizScores || []).some((s) => (s.score || 0) >= 80),
+    progress: (p) => ((p.recentQuizScores || []).some((s) => (s.score || 0) >= 80) ? 1 : 0),
+    label: (p) => ((p.recentQuizScores || []).some((s) => (s.score || 0) >= 80) ? 'Done!' : 'Pending'),
+  },
+  {
+    id: 'passages_5',
+    title: 'Avid Scholar',
+    desc: '5+ passages read',
+    icon: 'school-outline',
+    color: '#2F8F5B',
+    check: (p) => (p.passagesRead || 0) >= 5,
+    progress: (p) => Math.min(1, (p.passagesRead || 0) / 5),
+    label: (p) => `${Math.min(5, p.passagesRead || 0)}/5`,
+  },
+  {
+    id: 'vocab_15',
+    title: 'Lexicon Master',
+    desc: '15+ words saved',
+    icon: 'diamond-outline',
+    color: '#8082ED',
+    check: (p) => (p.wordsLearned?.length || 0) >= 15,
+    progress: (p) => Math.min(1, (p.wordsLearned?.length || 0) / 15),
+    label: (p) => `${Math.min(15, p.wordsLearned?.length || 0)}/15`,
+  },
+];
+
 export default function ProgressScreen({ navigation }) {
+
   const theme = useTheme();
   const { colors } = theme;
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -79,6 +143,7 @@ export default function ProgressScreen({ navigation }) {
   const avgScore = progress ? averageQuizScore(progress.recentQuizScores) : null;
   const currentLevel = progress ? latestLevel(progress.recentQuizScores) : null;
   const totalQuizzes = progress?.recentQuizScores?.length || 0;
+  const unlockedCount = progress ? MILESTONES.filter((m) => m.check(progress)).length : 0;
 
   if (!progress) {
     return (
@@ -156,6 +221,50 @@ export default function ProgressScreen({ navigation }) {
           </View>
         )}
 
+        {/* Reading Milestones & Badges */}
+        <View style={styles.milestonesSection}>
+          <View style={styles.milestonesHeaderRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="ribbon-outline" size={16} color={colors.lamp} />
+              <Text style={styles.sectionLabelNoMargin}>Reading Milestones</Text>
+            </View>
+            <View style={styles.milestonesBadge}>
+              <Text style={styles.milestonesBadgeText}>{unlockedCount}/{MILESTONES.length} Unlocked</Text>
+            </View>
+          </View>
+          <View style={styles.milestonesGrid}>
+            {MILESTONES.map((m) => {
+              const unlocked = m.check(progress);
+              const prog = m.progress(progress);
+              return (
+                <View key={m.id} style={[styles.milestoneCard, unlocked && styles.milestoneCardUnlocked]}>
+                  <View style={styles.milestoneTop}>
+                    <View style={[styles.milestoneIconWrap, { backgroundColor: unlocked ? m.color + '22' : colors.paperRaised }]}>
+                      <Ionicons name={m.icon} size={16} color={unlocked ? m.color : colors.textFaint} />
+                    </View>
+                    {unlocked ? (
+                      <View style={[styles.milestoneStatusBadge, { backgroundColor: colors.sageSoft }]}>
+                        <Ionicons name="checkmark" size={11} color={colors.sage} />
+                      </View>
+                    ) : (
+                      <Text style={styles.milestoneProgressLabel}>{m.label(progress)}</Text>
+                    )}
+                  </View>
+                  <Text style={[styles.milestoneTitle, unlocked && styles.milestoneTitleUnlocked]} numberOfLines={1}>
+                    {m.title}
+                  </Text>
+                  <Text style={styles.milestoneDesc} numberOfLines={1}>{m.desc}</Text>
+                  {!unlocked && (
+                    <View style={styles.milestoneBarBg}>
+                      <View style={[styles.milestoneBarFill, { width: `${Math.round(prog * 100)}%`, backgroundColor: m.color }]} />
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
         {/* Vocab Review Banner */}
         {due.length > 0 && (
           <Pressable style={styles.reviewBanner} onPress={openReview}>
@@ -174,6 +283,7 @@ export default function ProgressScreen({ navigation }) {
 
         {/* Words Learned */}
         <Text style={styles.sectionLabel}>Words you've learned</Text>
+
         {progress.wordsLearned.length === 0 ? (
           <Text style={styles.empty}>
             None yet — tap a word in a reading session and hit "Got it!" to save it here.
@@ -328,6 +438,106 @@ function createStyles({ colors, fonts, spacing, radius }) {
       borderRadius: radius.pill,
     },
 
+    // Milestones
+    milestonesSection: {
+      marginBottom: spacing.lg,
+    },
+    milestonesHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.sm,
+    },
+    sectionLabelNoMargin: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 13,
+      color: colors.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    milestonesBadge: {
+      backgroundColor: colors.paperRaised,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    milestonesBadgeText: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 11,
+      color: colors.lamp,
+    },
+    milestonesGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    milestoneCard: {
+      width: '48.5%',
+      backgroundColor: colors.paper,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.sm + 2,
+    },
+    milestoneCardUnlocked: {
+      borderColor: colors.border,
+      backgroundColor: colors.paper,
+    },
+    milestoneTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 6,
+    },
+    milestoneIconWrap: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    milestoneStatusBadge: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    milestoneProgressLabel: {
+      fontFamily: fonts.body,
+      fontSize: 10.5,
+      color: colors.textFaint,
+    },
+    milestoneTitle: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 12.5,
+      color: colors.textPrimary,
+      marginBottom: 2,
+    },
+    milestoneTitleUnlocked: {
+      color: colors.textPrimary,
+    },
+    milestoneDesc: {
+      fontFamily: fonts.body,
+      fontSize: 11,
+      color: colors.textMuted,
+      lineHeight: 14,
+      marginBottom: 4,
+    },
+    milestoneBarBg: {
+      height: 3,
+      backgroundColor: colors.paperRaised,
+      borderRadius: radius.pill,
+      marginTop: 2,
+      overflow: 'hidden',
+    },
+    milestoneBarFill: {
+      height: '100%',
+      borderRadius: radius.pill,
+    },
+
     sectionLabel: {
       fontFamily: fonts.bodySemiBold,
       fontSize: 13,
@@ -337,6 +547,7 @@ function createStyles({ colors, fonts, spacing, radius }) {
       marginTop: spacing.lg,
       marginBottom: spacing.sm,
     },
+
     empty: { fontFamily: fonts.body, fontSize: 13.5, color: colors.textFaint, lineHeight: 19 },
     wordGrid: { flexDirection: 'row', flexWrap: 'wrap' },
     wordChip: {
