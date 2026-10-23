@@ -19,6 +19,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 import { useTheme } from '../contexts/ThemeContext';
 
 // Splits `text` into (word/whitespace) tokens, same approach as before.
@@ -70,6 +71,7 @@ export default function TappableText({ text, style, onExplain, onLoop, onSelecti
   const { tokens, wordTokenIndices } = useMemo(() => tokenize(text), [text]);
   const [selStart, setSelStart] = useState(null);
   const [selEnd, setSelEnd] = useState(null);
+  const [speakingSelection, setSpeakingSelection] = useState(false);
 
   const hasSelection = selStart !== null && selEnd !== null;
   const isSingleWord = hasSelection && selStart === selEnd;
@@ -92,6 +94,10 @@ export default function TappableText({ text, style, onExplain, onLoop, onSelecti
   }, [tokens, speakingCharIndex]);
 
   const clearSelection = () => {
+    if (speakingSelection) {
+      Speech.stop();
+      setSpeakingSelection(false);
+    }
     setSelStart(null);
     setSelEnd(null);
   };
@@ -222,6 +228,35 @@ export default function TappableText({ text, style, onExplain, onLoop, onSelecti
             hitSlop={6}
           >
             <Ionicons name="chevron-back" size={15} color={canExpandLeft ? colors.lamp : colors.textFaint} />
+          </Pressable>
+
+          <Pressable
+            style={[styles.arrowBtn, { marginHorizontal: 2 }]}
+            onPress={() => {
+              if (speakingSelection) {
+                Speech.stop();
+                setSpeakingSelection(false);
+                return;
+              }
+              const toSpeak = selectedText.trim();
+              if (!toSpeak) return;
+              Speech.stop();
+              setSpeakingSelection(true);
+              Speech.speak(toSpeak, {
+                rate: theme.speechRate || 0.9,
+                onDone: () => setSpeakingSelection(false),
+                onStopped: () => setSpeakingSelection(false),
+                onError: () => setSpeakingSelection(false),
+              });
+            }}
+            hitSlop={6}
+            accessibilityLabel={speakingSelection ? 'Stop audio' : 'Listen to selection'}
+          >
+            <Ionicons
+              name={speakingSelection ? 'stop-circle' : 'volume-medium-outline'}
+              size={16}
+              color={speakingSelection ? colors.lamp : colors.textPrimary}
+            />
           </Pressable>
 
           <Pressable

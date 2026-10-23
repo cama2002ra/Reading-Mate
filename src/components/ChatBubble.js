@@ -130,7 +130,12 @@ export default function ChatBubble({ message, onExplain, onLoop, onSelectionChan
   const isFile = message.type === 'file';
   const isQuiz = message.type === 'quiz';
   const isSelection = message.type === 'selection';
-  const isReadable = !isUser && !isImage && !isFile && !isQuiz;
+  const hasSpeakableContent =
+    !isQuiz &&
+    (typeof message.content === 'string'
+      ? message.content.trim().length > 0
+      : !!(message.content?.selectionText || message.content?.customInstruction));
+  const isReadable = hasSpeakableContent;
   // Supports both image shapes: the pre-Storage inline { base64, mimeType }
   // some older recorded sessions may still have, and the current
   // { url, storagePath, mimeType } shape every new upload uses (see
@@ -222,7 +227,12 @@ export default function ChatBubble({ message, onExplain, onLoop, onSelectionChan
 
         <View style={[styles.metaRow, isUser ? styles.metaRowUser : styles.metaRowAssistant]}>
           {isReadable && (
-            <Pressable hitSlop={8} onPress={onToggleSpeak} style={styles.speakBtn}>
+            <Pressable
+              hitSlop={8}
+              onPress={onToggleSpeak}
+              style={styles.speakBtn}
+              accessibilityLabel={speaking ? 'Stop speech' : 'Read message aloud'}
+            >
               <Ionicons
                 name={speaking ? 'stop-circle' : 'volume-medium-outline'}
                 size={14}
@@ -230,8 +240,8 @@ export default function ChatBubble({ message, onExplain, onLoop, onSelectionChan
               />
             </Pressable>
           )}
-          {isReadable && onBookmark && (
-            <Pressable hitSlop={8} onPress={onBookmark} style={styles.speakBtn}>
+          {!isUser && isReadable && onBookmark && (
+            <Pressable hitSlop={8} onPress={onBookmark} style={styles.speakBtn} accessibilityLabel="Bookmark message">
               <Ionicons
                 name={bookmarked ? 'star' : 'star-outline'}
                 size={14}

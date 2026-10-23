@@ -29,7 +29,7 @@ export default function VocabReviewModal({ visible, words, uid, onClose }) {
     if (!current?.word || speaking) return;
     setSpeaking(true);
     Speech.speak(current.word, {
-      rate: 0.9,
+      rate: theme.speechRate || 0.9,
       onDone: () => setSpeaking(false),
       onError: () => setSpeaking(false),
     });

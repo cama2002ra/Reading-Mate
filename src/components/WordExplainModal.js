@@ -16,7 +16,7 @@ export default function WordExplainModal({ popup, onClose, onMarkLearned, onResu
     if (!popup?.term || speaking) return;
     setSpeaking(true);
     Speech.speak(popup.term, {
-      rate: 0.9,
+      rate: theme.speechRate || 0.9,
       onDone: () => setSpeaking(false),
       onError: () => setSpeaking(false),
     });
@@ -32,21 +32,21 @@ export default function WordExplainModal({ popup, onClose, onMarkLearned, onResu
                 <View style={styles.tag}>
                   <Text style={styles.tagText}>{popup.mode === 'word' ? 'Vocabulary Word' : 'Selected Passage'}</Text>
                 </View>
-                {popup.mode === 'word' && (
-                  <Pressable
-                    style={styles.speakBtn}
-                    onPress={speakTerm}
-                    accessibilityLabel="Pronounce word"
-                    hitSlop={8}
-                  >
-                    <Ionicons
-                      name={speaking ? 'volume-high' : 'volume-medium-outline'}
-                      size={18}
-                      color={colors.lamp}
-                    />
-                    <Text style={styles.speakBtnText}>{speaking ? 'Playing…' : 'Pronounce'}</Text>
-                  </Pressable>
-                )}
+                <Pressable
+                  style={styles.speakBtn}
+                  onPress={speakTerm}
+                  accessibilityLabel={popup.mode === 'word' ? 'Pronounce word' : 'Read passage aloud'}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={speaking ? 'volume-high' : 'volume-medium-outline'}
+                    size={18}
+                    color={colors.lamp}
+                  />
+                  <Text style={styles.speakBtnText}>
+                    {speaking ? 'Playing…' : popup.mode === 'word' ? 'Pronounce' : 'Read Aloud'}
+                  </Text>
+                </Pressable>
               </View>
 
               <Text style={styles.term} numberOfLines={popup.mode === 'sentence' ? 5 : 2}>

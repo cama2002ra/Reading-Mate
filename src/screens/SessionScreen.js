@@ -124,7 +124,7 @@ function isSameDay(tsA, tsB) {
 export default function SessionScreen({ route, navigation }) {
   const { sessionId, pageIndex: initialPageIndex } = route.params;
   const theme = useTheme();
-  const { colors, fonts, radius } = theme;
+  const { colors, fonts, radius, speechRate } = theme;
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width: screenWidth } = useWindowDimensions();
   const isDesktop = screenWidth >= 768;
@@ -138,6 +138,7 @@ export default function SessionScreen({ route, navigation }) {
   const [popup, setPopup] = useState(null); // { mode, term, loading, definition, error } | null
   const [speakingIndex, setSpeakingIndex] = useState(null); // message index currently being read aloud, or null
   const [speakingCharIndex, setSpeakingCharIndex] = useState(null); // for read-aloud word highlighting
+  const [speakingDraft, setSpeakingDraft] = useState(false); // whether current input draft is being read aloud
   const [uploadProgress, setUploadProgress] = useState(null); // 0-1, or null when not uploading
   // A photo/PDF picked via attachPhoto/attachFile waits here until
   // AttachmentInstructionModal.js's prompt is answered, same idea as
@@ -406,6 +407,10 @@ export default function SessionScreen({ route, navigation }) {
     const trimmed = text.trim();
     if (!trimmed || !session || sending) return;
 
+    if (speakingDraft) {
+      Speech.stop();
+      setSpeakingDraft(false);
+    }
     setError(null);
     setInputText('');
     setSending(true);
@@ -555,6 +560,7 @@ export default function SessionScreen({ route, navigation }) {
   // shifted back by it so the live highlight still lines up with `text`.
   const startSpeech = useCallback((kind, index, text, offset = 0) => {
     Speech.stop();
+    if (speakingDraft) setSpeakingDraft(false);
     resumeRef.current = { kind, index, text, charIndex: offset };
     if (kind === 'chat') {
       setSpeakingIndex(index);
@@ -572,6 +578,7 @@ export default function SessionScreen({ route, navigation }) {
       }
     };
     Speech.speak(text.slice(offset), {
+      rate: speechRate || 0.9,
       onBoundary: (event) => {
         const abs = offset + event.charIndex;
         if (resumeRef.current) resumeRef.current.charIndex = abs;
@@ -585,13 +592,21 @@ export default function SessionScreen({ route, navigation }) {
       onStopped: clear, // keeps resumeRef — a stop may be "pause to re-read"
       onError: clear,
     });
-  }, []);
+  }, [speechRate, speakingDraft]);
 
   // Only one reply can be read aloud at a time. Tapping the button on the
   // message that's already speaking stops it; tapping a different one
   // interrupts and starts the new one.
   const toggleSpeak = useCallback(
-    (index, text) => {
+    (index, content) => {
+      let textToSpeak = '';
+      if (typeof content === 'string') {
+        textToSpeak = content;
+      } else if (content && typeof content === 'object') {
+        textToSpeak = content.selectionText || content.customInstruction || '';
+      }
+      if (!textToSpeak.trim()) return;
+
       if (speakingIndex === index) {
         Speech.stop();
         resumeRef.current = null;
@@ -599,10 +614,31 @@ export default function SessionScreen({ route, navigation }) {
         setSpeakingCharIndex(null);
         return;
       }
-      startSpeech('chat', index, text, 0);
+      startSpeech('chat', index, textToSpeak, 0);
     },
     [speakingIndex, startSpeech]
   );
+
+  const toggleSpeakDraft = useCallback(() => {
+    if (speakingDraft) {
+      Speech.stop();
+      setSpeakingDraft(false);
+      return;
+    }
+    const text = inputText.trim();
+    if (!text) return;
+    Speech.stop();
+    resumeRef.current = null;
+    setSpeakingIndex(null);
+    setSpeakingCharIndex(null);
+    setSpeakingDraft(true);
+    Speech.speak(text, {
+      rate: speechRate || 0.9,
+      onDone: () => setSpeakingDraft(false),
+      onStopped: () => setSpeakingDraft(false),
+      onError: () => setSpeakingDraft(false),
+    });
+  }, [speakingDraft, inputText, speechRate]);
 
   // "Re-read for me": the student selected something they didn't follow
   // while the text was being read (or just while reading). The narration
@@ -619,10 +655,10 @@ export default function SessionScreen({ route, navigation }) {
 
       let selectionDone = false;
       let explanation = null;
-      const speakExplanation = () => Speech.speak(explanation, { rate: 0.95 });
+      const speakExplanation = () => Speech.speak(explanation, { rate: speechRate || 0.95 });
 
       Speech.speak(trimmed, {
-        rate: 0.8,
+        rate: Math.max(0.6, (speechRate || 0.9) - 0.1),
         onDone: () => {
           selectionDone = true;
           if (explanation) speakExplanation();
@@ -633,7 +669,7 @@ export default function SessionScreen({ route, navigation }) {
         if (selectionDone) speakExplanation();
       });
     },
-    [handleExplainSelection]
+    [handleExplainSelection, speechRate]
   );
 
   const closePopup = useCallback(() => {
@@ -746,6 +782,30 @@ export default function SessionScreen({ route, navigation }) {
     setLoop(null);
     resumeReading();
   }, [stopLoopAudio, resumeReading]);
+=======
+    [speakingIndex, speechRate, speakingDraft]
+  );
+
+  const toggleSpeakDraft = useCallback(() => {
+    if (speakingDraft) {
+      Speech.stop();
+      setSpeakingDraft(false);
+      return;
+    }
+    const text = inputText.trim();
+    if (!text) return;
+    Speech.stop();
+    setSpeakingIndex(null);
+    setSpeakingCharIndex(null);
+    setSpeakingDraft(true);
+    Speech.speak(text, {
+      rate: speechRate || 0.9,
+      onDone: () => setSpeakingDraft(false),
+      onStopped: () => setSpeakingDraft(false),
+      onError: () => setSpeakingDraft(false),
+    });
+  }, [speakingDraft, inputText, speechRate]);
+>>>>>>> d6d9352 (feat: complete universal read-aloud across user chat messages, drafts, text selections, and PDF reader)
 
   // ---------- PDF reader pivot: reader-mode handlers (§4, §5) ----------
 
@@ -840,6 +900,11 @@ export default function SessionScreen({ route, navigation }) {
   // rather than being logged to the session (§4.4's "split by weight").
   const handleReaderSelectionAction = useCallback(
     ({ action, selectionText, pageIndex, pageContext }) => {
+      if (action === 'speak') {
+        Speech.stop();
+        Speech.speak(selectionText, { rate: speechRate || 0.9 });
+        return;
+      }
       if (action === 'define') {
         handleExplainSelection(selectionText, true, pageContext);
         return;
@@ -858,7 +923,7 @@ export default function SessionScreen({ route, navigation }) {
       }
       runReaderSelectionAction({ selectionText, pageIndex, pageContext, action });
     },
-    [handleExplainSelection, rereadSelection, startLoop, runReaderSelectionAction]
+    [handleExplainSelection, rereadSelection, startLoop, runReaderSelectionAction, speechRate]
   );
 
   const submitCustomPrompt = () => {
@@ -1253,6 +1318,20 @@ export default function SessionScreen({ route, navigation }) {
           multiline
           editable={!sending}
         />
+        {!!inputText.trim() && (
+          <Pressable
+            style={[styles.attachBtn, { marginRight: 4 }]}
+            onPress={toggleSpeakDraft}
+            hitSlop={6}
+            accessibilityLabel={speakingDraft ? 'Stop playback' : 'Listen to drafted follow-up'}
+          >
+            <Ionicons
+              name={speakingDraft ? 'stop-circle' : 'volume-medium-outline'}
+              size={20}
+              color={speakingDraft ? colors.lamp : colors.textMuted}
+            />
+          </Pressable>
+        )}
         <Pressable
           style={[styles.sendBtn, (!inputText.trim() || sending) && styles.sendBtnDisabled]}
           onPress={() => sendFollowUp(inputText)}

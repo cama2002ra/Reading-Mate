@@ -3,6 +3,7 @@ import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator, Alert,
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 
 import ScreenContainer from '../components/ScreenContainer';
 import Button from '../components/Button';
@@ -137,6 +138,31 @@ export default function NewSessionScreen({ route, navigation }) {
   // header comment for why a photo shouldn't commit straight to the
   // simplify default the instant it's picked. { asset, mimeType } | null.
   const [pendingPhoto, setPendingPhoto] = useState(null);
+  const [speakingInput, setSpeakingInput] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+    };
+  }, []);
+
+  const toggleSpeakInput = () => {
+    if (speakingInput) {
+      Speech.stop();
+      setSpeakingInput(false);
+      return;
+    }
+    const text = inputText.trim();
+    if (!text) return;
+    Speech.stop();
+    setSpeakingInput(true);
+    Speech.speak(text, {
+      rate: theme.speechRate || 0.9,
+      onDone: () => setSpeakingInput(false),
+      onStopped: () => setSpeakingInput(false),
+      onError: () => setSpeakingInput(false),
+    });
+  };
 
   // Entrance animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -196,6 +222,10 @@ export default function NewSessionScreen({ route, navigation }) {
     if (!inputText.trim()) {
       setError('Paste or type a passage first.');
       return;
+    }
+    if (speakingInput) {
+      Speech.stop();
+      setSpeakingInput(false);
     }
     setError(null);
     setLoading(true);
@@ -561,7 +591,26 @@ export default function NewSessionScreen({ route, navigation }) {
                   </View>
                   <Pressable
                     hitSlop={8}
+                    onPress={toggleSpeakInput}
+                    style={[styles.clearBtn, { marginRight: 6 }]}
+                    accessibilityLabel={speakingInput ? 'Stop reading' : 'Read passage aloud'}
+                  >
+                    <Ionicons
+                      name={speakingInput ? 'stop-circle' : 'volume-medium-outline'}
+                      size={13}
+                      color={speakingInput ? colors.lamp : colors.textMuted}
+                    />
+                    <Text style={[styles.clearBtnText, speakingInput && { color: colors.lamp }]}>
+                      {speakingInput ? 'Stop' : 'Listen'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    hitSlop={8}
                     onPress={() => {
+                      if (speakingInput) {
+                        Speech.stop();
+                        setSpeakingInput(false);
+                      }
                       setInputText('');
                       setSelectedSampleId(null);
                     }}

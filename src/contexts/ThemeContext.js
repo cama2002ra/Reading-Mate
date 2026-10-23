@@ -23,6 +23,8 @@ const VALID_MODES = ['system', 'light', 'dark'];
 const FONT_SIZE_STORAGE_KEY = 'readingMate.readingFontSize'; // 'small' | 'medium' | 'large'
 const VALID_FONT_SIZES = READING_FONT_SIZE_STEPS;
 
+const SPEECH_RATE_STORAGE_KEY = 'readingMate.speechRate';
+
 const ThemeContext = createContext(null);
 
 export function ThemeProvider({ children }) {
@@ -30,6 +32,7 @@ export function ThemeProvider({ children }) {
   const [mode, setMode] = useState('system'); // the stored *preference*
   const [systemScheme, setSystemScheme] = useState(Appearance.getColorScheme() || 'dark');
   const [readingFontSize, setReadingFontSizeState] = useState('medium');
+  const [speechRate, setSpeechRateState] = useState(0.9);
   const [ready, setReady] = useState(false);
   // Whether `mode` has already been reconciled with this signed-in user's
   // Firestore doc — guards against a later, unrelated profile write (e.g.
@@ -41,13 +44,19 @@ export function ThemeProvider({ children }) {
   // Read the last-used preference immediately, before any network round
   // trip, so there's no flash of the wrong theme on launch.
   useEffect(() => {
-    Promise.all([AsyncStorage.getItem(STORAGE_KEY), AsyncStorage.getItem(FONT_SIZE_STORAGE_KEY)])
-      .then(([savedMode, savedFontSize]) => {
+    Promise.all([
+      AsyncStorage.getItem(STORAGE_KEY),
+      AsyncStorage.getItem(FONT_SIZE_STORAGE_KEY),
+      AsyncStorage.getItem(SPEECH_RATE_STORAGE_KEY),
+    ])
+      .then(([savedMode, savedFontSize, savedRate]) => {
         if (VALID_MODES.includes(savedMode)) setMode(savedMode);
         if (VALID_FONT_SIZES.includes(savedFontSize)) setReadingFontSizeState(savedFontSize);
+        if (savedRate && !isNaN(Number(savedRate))) setSpeechRateState(Number(savedRate));
       })
       .finally(() => setReady(true));
   }, []);
+
 
   useEffect(() => {
     const sub = Appearance.addChangeListener(({ colorScheme }) => {
@@ -101,6 +110,12 @@ export function ThemeProvider({ children }) {
     if (user) updateReadingFontSizePreference(user.uid, nextSize).catch(() => {});
   };
 
+  const setSpeechRate = (nextRate) => {
+    const rateNum = Number(nextRate) || 0.9;
+    setSpeechRateState(rateNum);
+    AsyncStorage.setItem(SPEECH_RATE_STORAGE_KEY, String(rateNum)).catch(() => {});
+  };
+
   const resolvedMode = mode === 'system' ? systemScheme : mode; // 'light' | 'dark' — what's actually shown
   const colors = palettes[resolvedMode] || palettes.dark;
 
@@ -117,10 +132,13 @@ export function ThemeProvider({ children }) {
       readingFontSize, // 'small' | 'medium' | 'large'
       readingFontStyle: readingFontSizes[readingFontSize] || readingFontSizes.medium, // { fontSize, lineHeight }
       setReadingFontSize,
+      speechRate,
+      setSpeechRate,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mode, resolvedMode, colors, readingFontSize]
+    [mode, resolvedMode, colors, readingFontSize, speechRate]
   );
+
 
   // A few milliseconds of nothing while AsyncStorage resolves beats a
   // flash of the wrong theme followed by a swap.

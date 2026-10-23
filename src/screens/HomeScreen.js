@@ -140,7 +140,7 @@ export default function HomeScreen({ navigation }) {
     if (speakingWord || !todayWord) return;
     setSpeakingWord(true);
     Speech.speak(todayWord.word, {
-      rate: 0.85,
+      rate: theme.speechRate || 0.85,
       onDone: () => setSpeakingWord(false),
       onError: () => setSpeakingWord(false),
     });

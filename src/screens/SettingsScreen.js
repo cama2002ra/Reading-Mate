@@ -30,15 +30,15 @@ const FONT_SIZE_OPTIONS = [
 
 export default function SettingsScreen() {
   const theme = useTheme();
-  const { colors, fonts, radius, readingFontSize, setReadingFontSize } = theme;
+  const { colors, fonts, radius, readingFontSize, setReadingFontSize, speechRate, setSpeechRate } = theme;
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const { user, geminiApiKey } = useAuth();
   const [input, setInput] = useState(geminiApiKey || '');
   const [status, setStatus] = useState(null);
   const [testing, setTesting] = useState(false);
-  const [speechRate, setSpeechRate] = useState(0.9);
   const [testingSpeech, setTestingSpeech] = useState(false);
+
 
   // Entrance animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
