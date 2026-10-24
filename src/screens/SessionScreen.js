@@ -782,30 +782,6 @@ export default function SessionScreen({ route, navigation }) {
     setLoop(null);
     resumeReading();
   }, [stopLoopAudio, resumeReading]);
-=======
-    [speakingIndex, speechRate, speakingDraft]
-  );
-
-  const toggleSpeakDraft = useCallback(() => {
-    if (speakingDraft) {
-      Speech.stop();
-      setSpeakingDraft(false);
-      return;
-    }
-    const text = inputText.trim();
-    if (!text) return;
-    Speech.stop();
-    setSpeakingIndex(null);
-    setSpeakingCharIndex(null);
-    setSpeakingDraft(true);
-    Speech.speak(text, {
-      rate: speechRate || 0.9,
-      onDone: () => setSpeakingDraft(false),
-      onStopped: () => setSpeakingDraft(false),
-      onError: () => setSpeakingDraft(false),
-    });
-  }, [speakingDraft, inputText, speechRate]);
->>>>>>> d6d9352 (feat: complete universal read-aloud across user chat messages, drafts, text selections, and PDF reader)
 
   // ---------- PDF reader pivot: reader-mode handlers (§4, §5) ----------
 
