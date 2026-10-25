@@ -19,7 +19,7 @@ export default function ScreenContainer({ children, scroll = true, wide = false 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <Wrapper {...wrapperProps}>
-          <View style={wide ? styles.contentWide : styles.content}>{children}</View>
+          <View style={[wide ? styles.contentWide : styles.content, !scroll && styles.flex]}>{children}</View>
         </Wrapper>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -1501,6 +1501,7 @@ export default function SessionScreen({ route, navigation }) {
             ref={listRef}
             data={messages}
             keyExtractor={(_, i) => String(i)}
+            style={{ flex: 1 }}
             contentContainerStyle={styles.list}
             ListHeaderComponent={
               recap ? (

@@ -215,6 +215,7 @@ export default function SessionsListScreen({ navigation }) {
         <FlatList
           data={filteredSessions}
           keyExtractor={(item) => item.id}
+          style={{ flex: 1 }}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
             const photoUri = sourcePhotoUri(item);
